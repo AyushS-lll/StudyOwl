@@ -1,0 +1,9 @@
+FROM node:20-alpine
+
+WORKDIR /workspace/frontend
+
+COPY package.json .
+RUN npm install
+
+# Source is mounted as a volume in docker-compose — no COPY needed
+CMD ["npm", "run", "dev", "--", "--host"]
