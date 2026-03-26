@@ -1,0 +1,45 @@
+# Web framework
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+
+# Database
+sqlalchemy[asyncio]==2.0.30
+asyncpg==0.29.0
+alembic==1.13.1
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
+
+# AI
+anthropic==0.28.0
+
+# OCR
+pytesseract==0.3.10
+Pillow==10.3.0
+
+# Math verification
+sympy==1.12
+
+# HTTP client (async)
+httpx==0.27.0
+
+# Cache / session
+redis[asyncio]==5.0.4
+
+# Alerts
+sendgrid==6.11.0
+twilio==9.1.0
+
+# Object storage (R2 / S3 compatible)
+boto3==1.34.101
+
+# Config
+pydantic-settings==2.2.1
+python-dotenv==1.0.1
+
+# Dev / testing
+pytest==8.2.0
+pytest-asyncio==0.23.7
+ruff==0.4.4
