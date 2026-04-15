@@ -7,8 +7,25 @@ const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+export interface SignUpRequest {
+  name: string;
+  email: string;
+  password: string;
+  grade_level: string;
+  role?: "student" | "teacher";
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+}
+
 export interface StartSessionRequest {
-  student_id: string;
   question: string;
   photo_b64?: string;
 }
@@ -24,11 +41,20 @@ export interface AttemptRequest {
   attempt_text: string;
 }
 
+export interface LearningResource {
+  title: string;
+  url?: string;
+  summary?: string;
+}
+
 export interface AttemptResponse {
   status: "correct" | "wrong";
   hint?: string;
   hint_level?: 1 | 2 | 3;
   message?: string;
+  review_mode?: boolean;
+  review_url?: string;
+  learning_resources?: LearningResource[];
 }
 
 export interface SubjectProgress {
@@ -37,18 +63,17 @@ export interface SubjectProgress {
   success_rate: number;
 }
 
-export interface StudentProgress {
-  subjects: SubjectProgress[];
-  recent_sessions: RecentSession[];
-}
-
 export interface RecentSession {
   id: string;
   question: string;
   subject: string;
   resolved: boolean;
   started_at: string;
-  attempts_count: number;
+}
+
+export interface StudentProgress {
+  subjects: SubjectProgress[];
+  recent_sessions: RecentSession[];
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -73,6 +98,31 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 // ── API calls ────────────────────────────────────────────────────────────────
 
 export const api = {
+  /** Sign up a new account. */
+  signup: async (body: SignUpRequest): Promise<string> => {
+    const result = await apiFetch<TokenResponse>("/api/auth/signup", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    localStorage.setItem("studyowl_token", result.access_token);
+    return result.access_token;
+  },
+
+  /** Log in and store the JWT token. */
+  login: async (body: LoginRequest): Promise<string> => {
+    const result = await apiFetch<TokenResponse>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    localStorage.setItem("studyowl_token", result.access_token);
+    return result.access_token;
+  },
+
+  /** Log out by removing token. */
+  logout: () => {
+    localStorage.removeItem("studyowl_token");
+  },
+
   /** Start a new homework session and receive the first hint. */
   startSession: (body: StartSessionRequest) =>
     apiFetch<StartSessionResponse>("/api/session/start", {
@@ -90,19 +140,5 @@ export const api = {
   /** Fetch a student's progress data for the dashboard. */
   getProgress: (studentId: string) =>
     apiFetch<StudentProgress>(`/api/student/${studentId}/progress`),
-
-  /** Login and store the JWT token. */
-  login: async (email: string, password: string): Promise<void> => {
-    const form = new URLSearchParams({ username: email, password });
-    const res = await fetch(`${BASE}/api/auth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: form.toString(),
-    });
-    if (!res.ok) throw new Error("Login failed");
-    const data = await res.json();
-    localStorage.setItem("studyowl_token", data.access_token);
-  },
-
-  logout: () => localStorage.removeItem("studyowl_token"),
 };
+

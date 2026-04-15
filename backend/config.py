@@ -3,14 +3,20 @@ Centralised configuration — all env vars loaded here via Pydantic Settings.
 Never import os.environ directly elsewhere; use `from config import settings`.
 """
 
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+ROOT_DIR = Path(__file__).resolve().parents[1]
 
-    # Anthropic
-    anthropic_api_key: str
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=ROOT_DIR / ".env", extra="ignore")
+
+    # Azure OpenAI
+    azure_openai_api_key: str
+    azure_openai_endpoint: str
+    azure_openai_deployment: str = "gpt-4"  # Your deployment name
 
     # Database
     database_url: str  # postgresql+asyncpg://...
@@ -42,8 +48,13 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = ["http://localhost:5173"]
 
     # Session escalation thresholds
-    max_fails_before_alert: int = 3
+    max_fails_before_review: int = 3
+    max_fails_before_alert: int = 4
     inactivity_timeout_minutes: int = 10
+
+    # Travily learning resource API
+    travily_api_key: str = ""
+    travily_api_url: str = ""
 
 
 settings = Settings()

@@ -2,8 +2,7 @@
   "name": "StudyOwl Dev",
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
   "features": {
-    "ghcr.io/devcontainers/features/node:1": { "version": "20" },
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" }
   },
   "customizations": {
     "vscode": {
@@ -11,7 +10,12 @@
         "GitHub.copilot",
         "GitHub.copilot-chat",
         "ms-python.python",
-        "ms-python.vscode-pylance",
         "charliermarsh.ruff",
-        "bradlc.vscode-tailwindcss",
-        "dbaeumer.vscode-esli
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"
+      ]
+    }
+  },
+  "forwardPorts": [8000, 5173, 5432, 6379],
+  "postCreateCommand": "bash .devcontainer/setup.sh"
+}
