@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-50 text-gray-900 font-sans;
+}
+
+button {
+  @apply transition-colors duration-200;
+}
+
+input, textarea {
+  @apply border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-owl;
+}
+
+.celebration-wrapper {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  opacity: 0.95;
+  animation: confetti-fall 1.2s ease-out forwards;
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(0px) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(240px) rotate(720deg);
+    opacity: 0;
+  }
+}

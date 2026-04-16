@@ -10,10 +10,14 @@ Hint levels:
   3 — Near-answer with all values filled in. Student must do the final step.
 """
 
-import anthropic
+from openai import AzureOpenAI
 from config import settings
 
-client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+client = AzureOpenAI(
+    api_key=settings.azure_openai_api_key,
+    api_version="2024-10-01-preview",
+    azure_endpoint=settings.azure_openai_endpoint,
+)
 
 HINT_SYSTEM = """
 You are StudyOwl, a Socratic homework assistant. You NEVER give the direct answer.
@@ -56,11 +60,11 @@ def get_hint(
         else "None yet."
     )
 
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=300,
-        system=HINT_SYSTEM.format(level=level, subject=subject),
+    response = client.chat.completions.create(
+        model=settings.azure_openai_deployment,
+        max_completion_tokens=300,
         messages=[
+            {"role": "system", "content": HINT_SYSTEM.format(level=level, subject=subject)},
             {
                 "role": "user",
                 "content": (
@@ -71,7 +75,7 @@ def get_hint(
         ],
     )
 
-    return response.content[0].text
+    return response.choices[0].message.content.strip()
 
 
 def detect_distress(message: str) -> bool:
@@ -79,15 +83,20 @@ def detect_distress(message: str) -> bool:
     Use Claude to detect if a student message signals genuine distress.
     Returns True if the student should trigger a teacher alert immediately.
     """
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=10,
-        system=(
-            "You detect student distress in homework messages. "
-            "Reply with only 'yes' or 'no'. "
-            "Examples of distress: 'I give up', 'I don't understand anything', "
-            "'this makes no sense', 'I hate this', 'I can't do this'."
-        ),
-        messages=[{"role": "user", "content": message}],
+    response = client.chat.completions.create(
+        model=settings.azure_openai_deployment,
+        max_completion_tokens=10,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You detect student distress in homework messages. "
+                    "Reply with only 'yes' or 'no'. "
+                    "Examples of distress: 'I give up', 'I don't understand anything', "
+                    "'this makes no sense', 'I hate this', 'I can't do this'."
+                ),
+            },
+            {"role": "user", "content": message},
+        ],
     )
-    return response.content[0].text.strip().lower() == "yes"
+    return response.choices[0].message.content.strip().lower() == "yes"

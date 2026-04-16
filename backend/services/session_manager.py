@@ -8,12 +8,17 @@ All student interactions flow through process_attempt().
 from datetime import datetime, timezone
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from models.session import Session
 from models.attempt import Attempt
-from services import hint_engine, answer_verifier, alert_service, subject_router
+from . import hint_engine
+from . import answer_verifier
+from . import alert_service
+from . import subject_router
+from . import travily_service
 
 
 async def start_session(
@@ -75,8 +80,11 @@ async def process_attempt(
     if hint_engine.detect_distress(attempt_text):
         await _trigger_alert(db, session, reason="Student distress signal")
 
-    # Fetch all previous attempt texts for this session
-    previous_attempts = [a.attempt_text for a in session.attempts]
+    # Fetch all previous attempt texts for this session using async-safe SQL
+    result = await db.execute(
+        select(Attempt.attempt_text).where(Attempt.session_id == session.id)
+    )
+    previous_attempts = [row[0] for row in result.all()]
 
     # Verify the attempt
     is_correct = await answer_verifier.check(
@@ -101,24 +109,45 @@ async def process_attempt(
         return {"status": "correct", "message": "Brilliant work! You got it!"}
 
     # Wrong answer — advance state
-    session.fails_at_level += 1
+    total_wrong_attempts = len(previous_attempts) + 1
+    review_mode = total_wrong_attempts >= settings.max_fails_before_review
+    review_url = None
+
+    if review_mode:
+        session.hint_level = 3
+        hint = None
+        resource = await travily_service.fetch_learning_resource(session.question)
+        if resource:
+            hint = (
+                "You've used up your 3 attempts and need to review a related concept before trying again. "
+                f"Read the resource below and then try a new question."
+            )
+            learning_resources = [resource]
+        else:
+            hint = (
+                "You've used up your 3 attempts. Review a related worked example or article about solving linear equations, "
+                "then come back and try again."
+            )
+            learning_resources = []
+    else:
+        if session.hint_level < 3:
+            session.hint_level += 1
+            session.fails_at_level = 0
+        else:
+            session.fails_at_level += 1
+        hint = hint_engine.get_hint(
+            question=session.question,
+            subject=session.subject,
+            level=session.hint_level,
+            previous_attempts=previous_attempts + [attempt_text],
+        )
+        learning_resources = []
 
     if session.fails_at_level >= settings.max_fails_before_alert:
         await _trigger_alert(
             db, session,
             reason=f"Stuck at hint level {session.hint_level} after {session.fails_at_level} attempts",
         )
-
-    if session.hint_level < 3:
-        session.hint_level += 1
-        session.fails_at_level = 0
-
-    hint = hint_engine.get_hint(
-        question=session.question,
-        subject=session.subject,
-        level=session.hint_level,
-        previous_attempts=previous_attempts + [attempt_text],
-    )
 
     attempt.hint_shown = hint
     await db.commit()
@@ -128,6 +157,9 @@ async def process_attempt(
         "hint": hint,
         "hint_level": session.hint_level,
         "message": None,
+        "review_mode": review_mode,
+        "review_url": review_url,
+        "learning_resources": learning_resources,
     }
 
 
