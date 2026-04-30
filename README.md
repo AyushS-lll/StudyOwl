@@ -225,3 +225,11 @@ This project is licensed under the MIT License. See [LICENSE](./LICENSE) for det
 ---
 
 <p align="center">Built with curiosity. Powered by AI. Guided by wisdom. 🦉</p>
+
+<!-- Running the proj
+cd frontend
+npm run dev
+
+
+cd backend 
+uvicorn main:app --reload --host 0.0.0.0 --port 8000 -->
