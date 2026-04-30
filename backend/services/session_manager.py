@@ -116,19 +116,17 @@ async def process_attempt(
     if review_mode:
         session.hint_level = 3
         hint = None
-        resource = await travily_service.fetch_learning_resource(session.question)
-        if resource:
+        learning_resources = await travily_service.fetch_learning_resources(session.question, limit=5)
+        if learning_resources:
             hint = (
                 "You've used up your 3 attempts and need to review a related concept before trying again. "
-                f"Read the resource below and then try a new question."
+                "Check out the resources below to learn more, then try a new question."
             )
-            learning_resources = [resource]
         else:
             hint = (
                 "You've used up your 3 attempts. Review a related worked example or article about solving linear equations, "
                 "then come back and try again."
             )
-            learning_resources = []
     else:
         if session.hint_level < 3:
             session.hint_level += 1

@@ -7,6 +7,7 @@ Uses SymPy for math; Claude for other subjects.
 from openai import AzureOpenAI
 import re
 import sympy
+from sympy.parsing.sympy_parser import parse_expr, standard_transformations, implicit_multiplication_application
 from config import settings
 
 client = AzureOpenAI(
@@ -32,6 +33,7 @@ def _extract_math_expression(question: str) -> str | None:
     text = re.sub(r"what is |calculate |evaluate |find |solve |the result of |answer is |equals?", "", text)
     text = re.sub(r"[^0-9a-zA-Z\.\+\-\*/\^\(\)= ]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
+    
     if not text:
         return None
     return text
@@ -63,7 +65,13 @@ async def _verify_math(question: str, answer: str) -> bool:
     Verify math answers using SymPy when possible.
     Falls back to Claude for complex cases.
     """
-    answer_clean = answer.strip().replace("x =", "").replace("Answer:", "").strip()
+    # Clean up the answer: remove common prefixes (with or without space)
+    answer_clean = answer.strip()
+    for prefix in ["a =", "a=", "x =", "x=", "y =", "y=", "z =", "z=", "Answer:", "answer:", "The answer is"]:
+        if answer_clean.lower().startswith(prefix.lower()):
+            answer_clean = answer_clean[len(prefix):].strip()
+    
+    answer_clean = answer_clean.strip()
     if not answer_clean:
         return False
 
@@ -72,21 +80,56 @@ async def _verify_math(question: str, answer: str) -> bool:
         return await _verify_with_claude(question, answer, "math")
 
     try:
-        sympy_expr = sympy.sympify(question_expr)
-        if isinstance(sympy_expr, sympy.Equality):
-            symbols = list(sympy_expr.free_symbols)
-            if len(symbols) == 1:
-                solution = sympy.solve(sympy_expr, symbols[0])
-                if not solution:
-                    return False
-                actual = sympy.simplify(sympy.sympify(answer_clean))
-                return any(sympy.simplify(actual - sol) == 0 for sol in solution)
+        # Check if equation has "=" sign
+        if "=" in question_expr:
+            parts = question_expr.split("=")
+            if len(parts) != 2:
+                return await _verify_with_claude(question, answer, "math")
+            
+            left_expr = parts[0].strip()
+            right_expr = parts[1].strip()
+            
+            # Parse both sides with implicit multiplication
+            left = parse_expr(left_expr, transformations=(standard_transformations + (implicit_multiplication_application,)))
+            right = parse_expr(right_expr, transformations=(standard_transformations + (implicit_multiplication_application,)))
+            
+            # Get the variable to solve for
+            symbols = left.free_symbols | right.free_symbols
+            if len(symbols) != 1:
+                return await _verify_with_claude(question, answer, "math")
+            
+            var = list(symbols)[0]
+            equation = sympy.Eq(left, right)
+            solution = sympy.solve(equation, var)
+            
+            if not solution:
+                return False
+            
+            # Parse and compare the student's answer
+            try:
+                actual = sympy.sympify(answer_clean)
+            except (sympy.SympifyError, ValueError, TypeError):
+                return False
+            
+            # Check if actual matches any solution (with numerical tolerance)
+            for sol in solution:
+                try:
+                    sol_val = float(sympy.simplify(sol))
+                    actual_val = float(sympy.simplify(actual))
+                    # Allow small floating-point errors (1e-9)
+                    if abs(sol_val - actual_val) < 1e-9:
+                        return True
+                except (TypeError, ValueError):
+                    # If conversion to float fails, try symbolic comparison
+                    if sympy.simplify(actual - sol) == 0:
+                        return True
             return False
-
-        expected = sympy.simplify(sympy_expr)
-        actual = sympy.simplify(sympy.sympify(answer_clean))
-        return sympy.simplify(expected - actual) == 0
-    except (sympy.SympifyError, ValueError):
+        else:
+            # Expression without equation (evaluate both sides)
+            expected = parse_expr(question_expr, transformations=(standard_transformations + (implicit_multiplication_application,)))
+            actual = sympy.sympify(answer_clean)
+            return sympy.simplify(expected - actual) == 0
+    except (sympy.SympifyError, ValueError, TypeError):
         return await _verify_with_claude(question, answer, "math")
 
 

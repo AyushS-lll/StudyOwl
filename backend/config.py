@@ -45,7 +45,16 @@ class Settings(BaseSettings):
     r2_endpoint: str = ""
 
     # CORS
-    allowed_origins: list[str] = ["http://localhost:5173"]
+    allowed_origins: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:5174", 
+        "http://localhost:5175",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:5175",
+        "https://urban-bassoon-g4grgwx55r5jh94w6-5175.app.github.dev",
+        "https://urban-bassoon-g4grgwx55r5jh94w6-5173.app.github.dev",
+    ]
 
     # Session escalation thresholds
     max_fails_before_review: int = 3

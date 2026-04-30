@@ -17,9 +17,6 @@ engine = create_async_engine(
     settings.database_url,
     echo=False,  # Set to True for SQL debugging
     future=True,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True,
 )
 
 # Async session factory

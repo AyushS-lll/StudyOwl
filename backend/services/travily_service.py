@@ -1,9 +1,13 @@
 """
-Travily service — fetch a related learning resource for a stuck student.
+Tavily search service — fetch related learning resources for a stuck student.
 """
 
 import httpx
+import json
+import logging
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 
 async def fetch_learning_resource(question: str) -> dict[str, str] | None:
@@ -12,68 +16,105 @@ async def fetch_learning_resource(question: str) -> dict[str, str] | None:
 
     Returns a dict with keys 'title', 'url', and 'summary', or None if the API is unavailable or fails.
     """
-    if not settings.travily_api_url:
-        return None
+    resources = await fetch_learning_resources(question, limit=1)
+    return resources[0] if resources else None
 
-    headers = {"Content-Type": "application/json"}
+
+async def fetch_learning_resources(question: str, limit: int = 5) -> list[dict[str, str]]:
+    """
+    Query the Tavily API for multiple learning resources related to the student's question.
+
+    Args:
+        question: The student's homework question.
+        limit: Number of results to fetch (default 5).
+
+    Returns:
+        List of dicts with keys 'title', 'url', and 'summary'.
+        Returns empty list if the API is unavailable or fails.
+    """
+    if not settings.travily_api_url:
+        logger.warning("Tavily API URL not configured")
+        return []
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream"
+    }
     if settings.travily_api_key:
         headers["Authorization"] = f"Bearer {settings.travily_api_key}"
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
+            logger.info(f"Calling Tavily search API with query: {question}")
             response = await client.post(
                 settings.travily_api_url,
                 headers=headers,
-                json={"query": question, "limit": 1},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": "1",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "tavily_search",
+                        "arguments": {
+                            "query": question,
+                            "max_results": limit,
+                            "search_depth": "basic"
+                        }
+                    }
+                }
             )
             response.raise_for_status()
-            payload = response.json()
-    except Exception:
-        return None
+            
+            # Parse Server-Sent Events (SSE) response
+            payload = _parse_sse_response(response.text)
+            logger.info(f"Tavily API response: {payload}")
+    except Exception as e:
+        logger.error(f"Tavily API error: {e}", exc_info=True)
+        return []
 
-    if not isinstance(payload, dict):
-        return None
+    if not isinstance(payload, dict) or "result" not in payload:
+        logger.warning(f"Unexpected Tavily response structure: {payload}")
+        return []
 
-    def extract_resource_from_object(obj: dict) -> dict[str, str] | None:
-        title = obj.get("title") or obj.get("name") or obj.get("headline") or "Related resource"
-        url = (
-            obj.get("url")
-            or obj.get("link")
-            or obj.get("href")
-            or obj.get("web_url")
-            or obj.get("uri")
-        )
-        summary = (
-            obj.get("summary")
-            or obj.get("description")
-            or obj.get("snippet")
-            or obj.get("text")
-            or obj.get("content")
-        )
-        if title or summary:
-            return {"title": title, "url": url or "", "summary": summary or ""}
-        return None
+    result = payload.get("result", {})
+    
+    # Extract resources from search results (nested in structuredContent)
+    structured_content = result.get("structuredContent", {})
+    results = structured_content.get("results", [])
+    
+    if not results:
+        logger.warning(f"No results found in Tavily response")
+        return []
+    
+    resources = []
+    for item in results:
+        if isinstance(item, dict):
+            resource = {
+                "title": item.get("title", "Learning Resource"),
+                "url": item.get("url", ""),
+                "summary": item.get("content", "")
+            }
+            if resource["title"] or resource["summary"]:
+                resources.append(resource)
+    
+    logger.info(f"Extracted {len(resources)} resources from Tavily search")
+    return resources
 
-    # Attempt to extract a useful article from common response shapes.
-    items = None
-    for key in ("items", "results", "articles", "data", "links"):
-        if key in payload and isinstance(payload[key], list) and payload[key]:
-            items = payload[key]
-            break
 
-    if items:
-        first = items[0]
-        if isinstance(first, dict):
-            resource = extract_resource_from_object(first)
-            if resource:
-                return resource
-        return None
-
-    resource = extract_resource_from_object(payload)
-    if resource:
-        return resource
-
-    if "text" in payload and isinstance(payload["text"], str):
-        return {"title": "Related resource", "url": "", "summary": payload["text"]}
-
-    return None
+def _parse_sse_response(text: str) -> dict:
+    """
+    Parse Server-Sent Events response from Tavily API.
+    
+    Example format:
+        event: message
+        data: {"jsonrpc":"2.0","id":"1","result":{...}}
+    """
+    lines = text.strip().split('\n')
+    for line in lines:
+        if line.startswith("data: "):
+            try:
+                return json.loads(line[6:])  # Remove "data: " prefix
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse SSE data: {line}")
+                return {}
+    return {}

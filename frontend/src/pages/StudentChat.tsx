@@ -2,6 +2,12 @@ import React, { useState } from 'react'
 import { api } from '../api/studyowl'
 import HintBubble from '../components/HintBubble'
 
+interface LearningResource {
+  title: string
+  url?: string
+  summary?: string
+}
+
 export const StudentChat: React.FC = () => {
   const [question, setQuestion] = useState('')
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -12,7 +18,7 @@ export const StudentChat: React.FC = () => {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reviewMode, setReviewMode] = useState(false)
-  const [remoteResource, setRemoteResource] = useState<{title: string; url?: string; summary?: string} | null>(null)
+  const [learningResources, setLearningResources] = useState<LearningResource[]>([])
   const [sessionStage, setSessionStage] = useState<'start' | 'inProgress' | 'complete'>('start')
 
   const handleStartSession = async () => {
@@ -24,7 +30,7 @@ export const StudentChat: React.FC = () => {
     setStatus('loading')
     setError(null)
     setReviewMode(false)
-    setRemoteResource(null)
+    setLearningResources([])
 
     try {
       const result = await api.startSession({ question })
@@ -53,7 +59,7 @@ export const StudentChat: React.FC = () => {
       if (result.status === 'correct') {
         setMessage('You got it! Great work!')
         setReviewMode(false)
-        setRemoteResource(null)
+        setLearningResources([])
         setSessionStage('complete')
         setAttempt('')
       } else {
@@ -61,11 +67,7 @@ export const StudentChat: React.FC = () => {
         setHintLevel(result.hint_level ?? hintLevel)
         setMessage(result.message ?? null)
         setReviewMode(result.review_mode ?? false)
-        setRemoteResource(
-          result.learning_resources && result.learning_resources.length > 0
-            ? result.learning_resources[0]
-            : null,
-        )
+        setLearningResources(result.learning_resources ?? [])
         setAttempt('')
       }
       setStatus('idle')
@@ -85,7 +87,7 @@ export const StudentChat: React.FC = () => {
     setMessage(null)
     setError(null)
     setReviewMode(false)
-    setRemoteResource(null)
+    setLearningResources([])
   }
 
   return (
@@ -144,46 +146,63 @@ export const StudentChat: React.FC = () => {
                       />
                     ))}
                   </div>
-                  <div className="relative text-center">
-                    <h2 className="text-3xl font-bold text-orange-900 mb-3">
+                  <div className="relative">
+                    <h2 className="text-3xl font-bold text-orange-900 mb-3 text-center">
                       😞 Review Needed
                     </h2>
-                    <p className="text-orange-800 mb-4 text-lg">
+                    <p className="text-orange-800 mb-6 text-lg text-center">
                       You've used all 3 attempts. It's time to learn more before trying again.
                     </p>
-                    {remoteResource ? (
-                      <div className="bg-white rounded-lg p-4 border border-orange-200 text-left mb-4">
-                        <h3 className="font-semibold text-orange-900 mb-2">
-                          Useful Resource
-                        </h3>
-                        {remoteResource.title && (
-                          <p className="text-sm font-semibold text-gray-900 mb-1">{remoteResource.title}</p>
-                        )}
-                        <p className="text-sm text-gray-700 mb-2">{remoteResource.summary}</p>
-                        {remoteResource.url ? (
-                          <a
-                            href={remoteResource.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-sm font-semibold text-indigo-700 underline"
-                          >
-                            Open resource
-                          </a>
-                        ) : (
-                          <p className="text-sm text-gray-600">No direct link available.</p>
-                        )}
-                      </div>
+
+                    {learningResources && learningResources.length > 0 ? (
+                      <>
+                        <p className="text-orange-900 font-semibold mb-4 text-center">
+                          Here are some resources to help you understand this topic better:
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                          {learningResources.map((resource, index) => (
+                            <div
+                              key={index}
+                              className="bg-white rounded-lg p-4 border border-orange-200 hover:shadow-md transition-shadow"
+                            >
+                              <h3 className="font-semibold text-orange-900 mb-2 line-clamp-2">
+                                {resource.title || 'Learning Resource'}
+                              </h3>
+                              {resource.summary && (
+                                <p className="text-sm text-gray-700 mb-3 line-clamp-3">
+                                  {resource.summary}
+                                </p>
+                              )}
+                              {resource.url ? (
+                                <a
+                                  href={resource.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center text-sm font-semibold text-indigo-700 hover:text-indigo-900 underline"
+                                >
+                                  Open resource →
+                                </a>
+                              ) : (
+                                <p className="text-sm text-gray-500">No direct link available</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </>
                     ) : (
-                      <p className="text-sm text-orange-800 mb-4">
-                        Review a related website article or textbook example about solving equations, then return and try again.
+                      <p className="text-sm text-orange-800 mb-6 text-center">
+                        Review a related website article or textbook example about the topic, then return and try a new question.
                       </p>
                     )}
-                    <button
-                      onClick={handleNextProblem}
-                      className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition"
-                    >
-                      Back to new question
-                    </button>
+
+                    <div className="text-center">
+                      <button
+                        onClick={handleNextProblem}
+                        className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition"
+                      >
+                        Back to new question
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

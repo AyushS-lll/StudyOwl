@@ -3,7 +3,7 @@
  * All backend calls go through here — never use fetch() directly in components.
  */
 
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const BASE = import.meta.env.VITE_API_URL ?? "";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,6 +82,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem("studyowl_token");
   const res = await fetch(`${BASE}${path}`, {
     ...init,
+    credentials: "include",  // Include cookies/auth headers for cross-origin requests
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
