@@ -4,6 +4,7 @@ Sessions router — start a session, submit attempts, retrieve session info.
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 from pydantic import BaseModel
 from uuid import UUID
 
@@ -46,6 +47,7 @@ class AttemptResponse(BaseModel):
     hint: str | None = None
     hint_level: int | None = None
     message: str | None = None
+    final_answer: str | None = None
     review_mode: bool = False
     review_url: str | None = None
     learning_resources: list[LearningResource] = []
@@ -83,6 +85,9 @@ async def start_session(
         # TODO: Upload to R2 and get URL
         photo_url = None
 
+    if student.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can start homework sessions")
+
     session, hint = await session_manager.start_session(
         db=db,
         student_id=student.id,
@@ -114,13 +119,15 @@ async def submit_attempt(
         raise HTTPException(status_code=400, detail="Invalid session ID")
 
     # Fetch session
-    stmt = select(Session).where(Session.id == session_uuid)
+    stmt = select(Session).options(joinedload(Session.student)).where(Session.id == session_uuid)
     result = await db.execute(stmt)
-    session = result.scalars().first()
+    session = result.unique().scalars().first()
 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    if student.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can access homework sessions")
     if session.student_id != student.id:
         raise HTTPException(status_code=403, detail="Not authorized to access this session")
 
@@ -155,6 +162,8 @@ async def get_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    if student.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can access homework sessions")
     if session.student_id != student.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 

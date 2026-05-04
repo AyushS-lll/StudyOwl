@@ -48,7 +48,7 @@ async def start_session(
     await db.commit()
     await db.refresh(session)
 
-    first_hint = hint_engine.get_hint(
+    first_hint = await hint_engine.get_hint(
         question=question,
         subject=subject,
         level=1,
@@ -77,7 +77,7 @@ async def process_attempt(
         hint_level (if wrong), message.
     """
     # Distress check (fires alert regardless of attempt correctness)
-    if hint_engine.detect_distress(attempt_text):
+    if await hint_engine.detect_distress(attempt_text):
         await _trigger_alert(db, session, reason="Student distress signal")
 
     # Fetch all previous attempt texts for this session using async-safe SQL
@@ -108,8 +108,25 @@ async def process_attempt(
         await db.commit()
         return {"status": "correct", "message": "Brilliant work! You got it!"}
 
-    # Wrong answer — advance state
+    # Wrong answer — if the student has already seen all three hints, reveal the direct answer.
     total_wrong_attempts = len(previous_attempts) + 1
+    if session.hint_level == 3 and total_wrong_attempts >= settings.max_fails_before_review:
+        direct_answer = await hint_engine.get_direct_answer(session.question, session.subject)
+        learning_resources = await travily_service.fetch_learning_resources(session.question, limit=5)
+        session.resolved = True
+        session.resolved_at = datetime.now(timezone.utc)
+        await db.commit()
+        return {
+            "status": "wrong",
+            "hint": None,
+            "hint_level": session.hint_level,
+            "message": "You have reached the final hint, so here is the correct answer along with resources to review.",
+            "review_mode": True,
+            "review_url": None,
+            "learning_resources": learning_resources,
+            "final_answer": direct_answer,
+        }
+
     review_mode = total_wrong_attempts >= settings.max_fails_before_review
     review_url = None
 
@@ -133,7 +150,7 @@ async def process_attempt(
             session.fails_at_level = 0
         else:
             session.fails_at_level += 1
-        hint = hint_engine.get_hint(
+        hint = await hint_engine.get_hint(
             question=session.question,
             subject=session.subject,
             level=session.hint_level,

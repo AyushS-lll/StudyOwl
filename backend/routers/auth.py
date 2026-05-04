@@ -23,18 +23,21 @@ class SignUpRequest(BaseModel):
     name: str
     email: EmailStr
     password: str  # Will be truncated to 72 bytes due to bcrypt limit
-    grade_level: str
+    grade_level: str | None = None
     role: str = "student"  # "student" | "teacher"
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    role: str = "student"
 
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    user_id: str
+    role: str
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -112,19 +115,26 @@ async def signup(req: SignUpRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email already registered")
     
     # Create new student
+    if req.role == "student" and not req.grade_level:
+        raise HTTPException(status_code=400, detail="Grade level is required for student signup")
+
     student = Student(
         name=req.name,
         email=req.email,
         hashed_password=hash_password(req.password),
-        grade_level=req.grade_level,
+        grade_level=req.grade_level or "",
         role=req.role,
     )
     db.add(student)
     await db.commit()
     
-    # Return token
+    # Return token and user metadata
     access_token = create_access_token(email=req.email)
-    return {"access_token": access_token}
+    return {
+        "access_token": access_token,
+        "user_id": str(student.id),
+        "role": student.role,
+    }
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -136,6 +146,16 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     
     if not student or not verify_password(req.password, student.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if req.role != student.role:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Login role mismatch. Use {student.role} credentials for this account.",
+        )
     
     access_token = create_access_token(email=req.email)
-    return {"access_token": access_token}
+    return {
+        "access_token": access_token,
+        "user_id": str(student.id),
+        "role": student.role,
+    }

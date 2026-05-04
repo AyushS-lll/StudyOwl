@@ -9,6 +9,10 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        ws: true,
+        followRedirects: true,
+        // Preserve the Authorization header and other important headers
+        headers: {}
       }
     }
   }

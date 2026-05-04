@@ -133,6 +133,43 @@ async def _verify_math(question: str, answer: str) -> bool:
         return await _verify_with_claude(question, answer, "math")
 
 
+def solve_math_question(question: str) -> str | None:
+    """
+    Compute the correct answer for a simple math question using SymPy.
+
+    Returns a short answer string when the question can be solved symbolically,
+    otherwise returns None to allow a fallback to Claude.
+    """
+    question_expr = _extract_math_expression(question)
+    if not question_expr:
+        return None
+
+    try:
+        if "=" in question_expr:
+            parts = question_expr.split("=")
+            if len(parts) != 2:
+                return None
+            left_expr = parts[0].strip()
+            right_expr = parts[1].strip()
+            left = parse_expr(left_expr, transformations=(standard_transformations + (implicit_multiplication_application,)))
+            right = parse_expr(right_expr, transformations=(standard_transformations + (implicit_multiplication_application,)))
+            symbols = left.free_symbols | right.free_symbols
+            if len(symbols) != 1:
+                return None
+            var = list(symbols)[0]
+            solution = sympy.solve(sympy.Eq(left, right), var)
+            if not solution:
+                return None
+            solution_text = ", ".join(str(sol) for sol in solution)
+            return solution_text
+
+        expected = parse_expr(question_expr, transformations=(standard_transformations + (implicit_multiplication_application,)))
+        simplified = sympy.simplify(expected)
+        return str(simplified)
+    except (sympy.SympifyError, ValueError, TypeError):
+        return None
+
+
 async def _verify_with_claude(question: str, answer: str, subject: str) -> bool:
     """
     Use Claude to verify if an answer is correct.

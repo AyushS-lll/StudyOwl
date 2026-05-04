@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { api } from '../api/studyowl'
+import React, { useEffect, useState } from 'react'
+import { api, StudentProgress } from '../api/studyowl'
 import HintBubble from '../components/HintBubble'
 
 interface LearningResource {
@@ -20,6 +20,9 @@ export const StudentChat: React.FC = () => {
   const [reviewMode, setReviewMode] = useState(false)
   const [learningResources, setLearningResources] = useState<LearningResource[]>([])
   const [sessionStage, setSessionStage] = useState<'start' | 'inProgress' | 'complete'>('start')
+  const [finalAnswer, setFinalAnswer] = useState<string | null>(null)
+  const [progress, setProgress] = useState<StudentProgress | null>(null)
+  const [progressError, setProgressError] = useState<string | null>(null)
 
   const handleStartSession = async () => {
     if (!question.trim()) {
@@ -60,6 +63,7 @@ export const StudentChat: React.FC = () => {
         setMessage('You got it! Great work!')
         setReviewMode(false)
         setLearningResources([])
+        setFinalAnswer(null)
         setSessionStage('complete')
         setAttempt('')
       } else {
@@ -68,6 +72,7 @@ export const StudentChat: React.FC = () => {
         setMessage(result.message ?? null)
         setReviewMode(result.review_mode ?? false)
         setLearningResources(result.learning_resources ?? [])
+        setFinalAnswer(result.final_answer ?? null)
         setAttempt('')
       }
       setStatus('idle')
@@ -87,8 +92,21 @@ export const StudentChat: React.FC = () => {
     setMessage(null)
     setError(null)
     setReviewMode(false)
+    setFinalAnswer(null)
     setLearningResources([])
   }
+
+  useEffect(() => {
+    const studentId = localStorage.getItem('studyowl_user_id')
+    if (!studentId) {
+      setProgressError('Unable to load your progress.')
+      return
+    }
+
+    api.getProgress(studentId)
+      .then((data) => setProgress(data))
+      .catch((err) => setProgressError(err.message))
+  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -99,6 +117,54 @@ export const StudentChat: React.FC = () => {
           </h1>
           <p className="text-gray-600">Your AI Homework Assistant</p>
         </header>
+
+        <div className="grid gap-6 mb-6 md:grid-cols-3">
+          <div className="col-span-2 rounded-3xl bg-white/90 p-6 shadow-lg border border-indigo-100">
+            <h2 className="text-xl font-semibold text-indigo-900 mb-3">Homework Analytics</h2>
+            {progressError ? (
+              <p className="text-sm text-red-600">{progressError}</p>
+            ) : progress ? (
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-2xl bg-indigo-50 p-4">
+                    <p className="text-xs uppercase tracking-wide text-indigo-600">Subjects Tracked</p>
+                    <p className="mt-2 text-3xl font-bold text-indigo-900">{progress.subjects.length}</p>
+                  </div>
+                  <div className="rounded-2xl bg-sky-50 p-4">
+                    <p className="text-xs uppercase tracking-wide text-sky-600">Success Rate</p>
+                    <p className="mt-2 text-3xl font-bold text-sky-900">{Math.round(progress.subjects.reduce((sum, item) => sum + item.success_rate, 0) / (progress.subjects.length || 1) * 100) / 100}%</p>
+                  </div>
+                  <div className="rounded-2xl bg-emerald-50 p-4">
+                    <p className="text-xs uppercase tracking-wide text-emerald-600">Recent Sessions</p>
+                    <p className="mt-2 text-3xl font-bold text-emerald-900">{progress.recent_sessions.length}</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {progress.subjects.map((subject) => (
+                    <div key={subject.name} className="rounded-2xl bg-white p-4 border border-slate-200">
+                      <div className="flex items-center justify-between gap-4">
+                        <p className="font-semibold text-slate-900">{subject.name}</p>
+                        <p className="text-sm text-slate-500">{subject.sessions} sessions</p>
+                      </div>
+                      <div className="mt-3 h-2 rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-indigo-500" style={{ width: `${subject.success_rate * 100}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">Loading your learning progress...</p>
+            )}
+          </div>
+
+          <div className="rounded-3xl bg-white/90 p-6 shadow-lg border border-indigo-100">
+            <h2 className="text-xl font-semibold text-indigo-900 mb-3">Quick Tip</h2>
+            <p className="text-sm text-slate-600">
+              Track your progress on each subject, then use the hints below to build confidence before the final step.
+            </p>
+          </div>
+        </div>
 
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
           {sessionStage === 'start' ? (
@@ -213,7 +279,22 @@ export const StudentChat: React.FC = () => {
                 </div>
               )}
 
-              {!reviewMode && sessionId && (
+              {finalAnswer && (
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded">
+                  <p className="text-blue-900 font-semibold mb-2">Final answer revealed</p>
+                  <p className="text-gray-800 whitespace-pre-wrap">{finalAnswer}</p>
+                  <div className="mt-4 text-right">
+                    <button
+                      onClick={handleNextProblem}
+                      className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition"
+                    >
+                      Try a new question
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!reviewMode && sessionId && !finalAnswer && (
                 <>
                   <input
                     type="text"

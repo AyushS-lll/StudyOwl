@@ -12,6 +12,7 @@ Hint levels:
 
 from openai import AzureOpenAI
 from config import settings
+from . import answer_verifier
 
 client = AzureOpenAI(
     api_key=settings.azure_openai_api_key,
@@ -36,7 +37,7 @@ Rules:
 """
 
 
-def get_hint(
+async def get_hint(
     question: str,
     subject: str,
     level: int,
@@ -78,7 +79,35 @@ def get_hint(
     return response.choices[0].message.content.strip()
 
 
-def detect_distress(message: str) -> bool:
+async def get_direct_answer(question: str, subject: str) -> str:
+    """
+    Return the direct correct answer for a homework question after all hints are exhausted.
+
+    For math, use symbolic solving when possible. For other subjects, fall back to the model.
+    """
+    if subject == "math":
+        direct_answer = answer_verifier.solve_math_question(question)
+        if direct_answer:
+            return direct_answer
+
+    response = client.chat.completions.create(
+        model=settings.azure_openai_deployment,
+        max_completion_tokens=150,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are StudyOwl, a homework assistant. The student has already seen all three hints. "
+                    "Provide the direct correct answer clearly and concisely. Do not add extra unrelated details."
+                ),
+            },
+            {"role": "user", "content": f"Question: {question}"},
+        ],
+    )
+    return response.choices[0].message.content.strip()
+
+
+async def detect_distress(message: str) -> bool:
     """
     Use Claude to detect if a student message signals genuine distress.
     Returns True if the student should trigger a teacher alert immediately.
