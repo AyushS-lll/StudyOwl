@@ -18,7 +18,7 @@ openai==1.109.1
 
 # OCR
 pytesseract==0.3.10
-Pillow==10.3.0
+Pillow
 
 # Math verification
 sympy==1.12

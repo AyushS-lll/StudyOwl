@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { api, StudentProgress } from '../api/studyowl'
 import HintBubble from '../components/HintBubble'
+import PhotoUpload from '../components/PhotoUpload'
 
 interface LearningResource {
   title: string
@@ -10,6 +11,9 @@ interface LearningResource {
 
 export const StudentChat: React.FC = () => {
   const [question, setQuestion] = useState('')
+  const [photoB64, setPhotoB64] = useState<string | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [ocrMessage, setOcrMessage] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
   const [hintLevel, setHintLevel] = useState<1 | 2 | 3>(1)
@@ -25,25 +29,33 @@ export const StudentChat: React.FC = () => {
   const [progressError, setProgressError] = useState<string | null>(null)
 
   const handleStartSession = async () => {
-    if (!question.trim()) {
-      setError('Please enter a homework question')
+    if (!question.trim() && !photoB64) {
+      setError('Please enter a homework question or upload a problem image')
       return
     }
 
     setStatus('loading')
     setError(null)
+    setOcrMessage(null)
     setReviewMode(false)
     setLearningResources([])
 
     try {
-      const result = await api.startSession({ question })
+      const result = await api.startSession({
+        question,
+        photo_b64: photoB64 ?? undefined,
+      })
       setSessionId(result.session_id)
       setSessionStage('inProgress')
       setHint(result.hint)
       setHintLevel(result.hint_level)
+      setQuestion(result.question)
       setAttempt('')
       setStatus('idle')
       setMessage(null)
+      if (photoB64 && !question.trim()) {
+        setOcrMessage('Your image was uploaded and OCR text is used for this question.')
+      }
     } catch (err) {
       setError((err as Error).message)
       setStatus('idle')
@@ -86,6 +98,9 @@ export const StudentChat: React.FC = () => {
     setSessionId(null)
     setSessionStage('start')
     setQuestion('')
+    setPhotoB64(null)
+    setPhotoPreview(null)
+    setOcrMessage(null)
     setHint(null)
     setHintLevel(1)
     setAttempt('')
@@ -178,6 +193,31 @@ export const StudentChat: React.FC = () => {
                 placeholder="Type or paste your homework question here..."
                 className="w-full h-32 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
               />
+
+              <div className="mb-4">
+                <PhotoUpload
+                  onPhotoCapture={(base64) => {
+                    setPhotoB64(base64)
+                    setPhotoPreview(base64)
+                    setError(null)
+                  }}
+                  loading={status === 'loading'}
+                />
+              </div>
+
+              {photoPreview && (
+                <div className="mb-4 rounded-lg border border-dashed border-slate-300 p-3 bg-slate-50">
+                  <p className="text-sm text-slate-600 mb-2">Image ready for OCR:</p>
+                  <img src={photoPreview} alt="Problem upload preview" className="mx-auto max-h-48 object-contain" />
+                </div>
+              )}
+
+              {ocrMessage && (
+                <div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-blue-700">
+                  {ocrMessage}
+                </div>
+              )}
+
               <button
                 onClick={handleStartSession}
                 disabled={status === 'loading'}

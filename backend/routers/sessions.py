@@ -30,6 +30,7 @@ class StartSessionResponse(BaseModel):
     hint: str
     hint_level: int
     subject: str
+    question: str
 
 
 class AttemptRequest(BaseModel):
@@ -85,6 +86,12 @@ async def start_session(
         # TODO: Upload to R2 and get URL
         photo_url = None
 
+    if not req.question.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Unable to extract readable text from the uploaded image. Please type the question or upload a clearer photo.",
+        )
+
     if student.role != "student":
         raise HTTPException(status_code=403, detail="Only students can start homework sessions")
 
@@ -100,6 +107,7 @@ async def start_session(
         hint=hint,
         hint_level=session.hint_level,
         subject=session.subject,
+        question=session.question,
     )
 
 

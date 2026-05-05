@@ -38,6 +38,7 @@ export interface StartSessionResponse {
   hint: string;
   hint_level: 1 | 2 | 3;
   subject: string;
+  question: string;
 }
 
 export interface AttemptRequest {
