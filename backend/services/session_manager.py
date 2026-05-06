@@ -120,7 +120,7 @@ async def process_attempt(
             "status": "wrong",
             "hint": None,
             "hint_level": session.hint_level,
-            "message": "You have reached the final hint, so here is the correct answer along with resources to review.",
+            "message": "You have reached the final hint, so here are some resources to review along with the correct answer.",
             "review_mode": True,
             "review_url": None,
             "learning_resources": learning_resources,

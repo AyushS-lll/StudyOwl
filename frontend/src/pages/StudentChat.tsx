@@ -188,6 +188,11 @@ export const StudentChat: React.FC = () => {
             </>
           ) : sessionStage === 'inProgress' ? (
             <>
+             {message && (
+                <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-4 rounded">
+                  <p className="text-gray-800">{message}</p>
+                </div>
+              )}
               <div className="mb-6">
                 <p className="text-gray-600 mb-2">Question:</p>
                 <p className="text-gray-900 bg-gray-50 p-3 rounded-lg">
@@ -273,11 +278,11 @@ export const StudentChat: React.FC = () => {
                 </div>
               )}
 
-              {message && (
+              {/* {message && (
                 <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-4 rounded">
                   <p className="text-gray-800">{message}</p>
                 </div>
-              )}
+              )} */}
 
               {finalAnswer && (
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded">

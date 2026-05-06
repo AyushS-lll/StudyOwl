@@ -4,6 +4,7 @@ Answer verifier — check if a student's answer is correct.
 Uses SymPy for math; Claude for other subjects.
 """
 
+import asyncio
 from openai import AzureOpenAI
 import re
 import sympy
@@ -20,18 +21,26 @@ client = AzureOpenAI(
 def _extract_math_expression(question: str) -> str | None:
     """Try to convert a simple natural-language math question into a SymPy expression."""
     text = question.lower()
+    
+    # Remove common question prefixes (e.g., "Solve for x in")
+    text = re.sub(r"^(solve for [a-z]+ in |solve for [a-z]+ |solve |find |calculate |evaluate |what is |simplify )", "", text)
+    
+    # Replace written-out operations
     text = text.replace("divided by", "/")
     text = text.replace("over", "/")
     text = text.replace("times", "*")
     text = text.replace("multiplied by", "*")
     text = text.replace("plus", "+")
     text = text.replace("minus", "-")
+    
+    # Handle exponent notation
     text = text.replace("^", "**")
     text = text.replace("–", "-")
     text = text.replace("—", "-")
     text = text.replace("−", "-")
-    text = re.sub(r"what is |calculate |evaluate |find |solve |the result of |answer is |equals?", "", text)
-    text = re.sub(r"[^0-9a-zA-Z\.\+\-\*/\^\(\)= ]+", " ", text)
+    
+    # Keep only valid mathematical characters (allow spaces for now)
+    text = re.sub(r"[^0-9a-zA-Z\.\+\-\*/\^\(\)=\s]+", "", text)
     text = re.sub(r"\s+", " ", text).strip()
     
     if not text:
@@ -174,22 +183,26 @@ async def _verify_with_claude(question: str, answer: str, subject: str) -> bool:
     """
     Use Claude to verify if an answer is correct.
     """
-    response = client.chat.completions.create(
-        model=settings.azure_openai_deployment,
-        max_completion_tokens=50,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are an expert homework grader. "
-                    "Evaluate if the student's answer to the question is correct. "
-                    "Respond with ONLY 'yes' or 'no'. Accept reasonable variations and rounding."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"Question: {question}\n\nStudent's answer: {answer}",
-            }
-        ],
-    )
+    # Wrap sync OpenAI call in thread pool to avoid blocking event loop
+    def _call_openai():
+        return client.chat.completions.create(
+            model=settings.azure_openai_deployment,
+            max_completion_tokens=50,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert homework grader. "
+                        "Evaluate if the student's answer to the question is correct. "
+                        "Respond with ONLY 'yes' or 'no'. Accept reasonable variations and rounding."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Question: {question}\n\nStudent's answer: {answer}",
+                }
+            ],
+        )
+
+    response = await asyncio.to_thread(_call_openai)
     return response.choices[0].message.content.strip().lower() == "yes"

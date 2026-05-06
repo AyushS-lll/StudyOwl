@@ -4,6 +4,7 @@ Subject router — classify questions into subject areas.
 Uses Claude to categorize incoming questions.
 """
 
+import asyncio
 from openai import AzureOpenAI
 from config import settings
 
@@ -38,14 +39,18 @@ async def classify(question: str) -> str:
     Returns:
         One of: 'math', 'science', 'english', 'history', 'other'.
     """
-    response = client.chat.completions.create(
-        model=settings.azure_openai_deployment,
-        max_completion_tokens=10,
-        messages=[
-            {"role": "system", "content": SUBJECT_SYSTEM},
-            {"role": "user", "content": question},
-        ],
-    )
+    # Wrap sync OpenAI call in thread pool to avoid blocking event loop
+    def _call_openai():
+        return client.chat.completions.create(
+            model=settings.azure_openai_deployment,
+            max_completion_tokens=10,
+            messages=[
+                {"role": "system", "content": SUBJECT_SYSTEM},
+                {"role": "user", "content": question},
+            ],
+        )
+
+    response = await asyncio.to_thread(_call_openai)
     subject = response.choices[0].message.content.strip().lower()
     # Ensure it's a valid subject
     valid_subjects = ["math", "science", "english", "history", "other"]

@@ -10,6 +10,7 @@ Hint levels:
   3 — Near-answer with all values filled in. Student must do the final step.
 """
 
+import asyncio
 from openai import AzureOpenAI
 from config import settings
 from . import answer_verifier
@@ -53,7 +54,7 @@ async def get_hint(
         previous_attempts: List of the student's previous answer attempts.
 
     Returns:
-        A hint string from Claude, appropriate to the hint level.
+        A hint string from AzureOpenAI, appropriate to the hint level.
     """
     attempts_text = (
         "\n".join(f"- {a}" for a in previous_attempts)
@@ -61,21 +62,24 @@ async def get_hint(
         else "None yet."
     )
 
-    response = client.chat.completions.create(
-        model=settings.azure_openai_deployment,
-        max_completion_tokens=300,
-        messages=[
-            {"role": "system", "content": HINT_SYSTEM.format(level=level, subject=subject)},
-            {
-                "role": "user",
-                "content": (
-                    f"Question: {question}\n\n"
-                    f"Student's previous attempts:\n{attempts_text}"
-                ),
-            }
-        ],
-    )
+    # Wrap sync OpenAI call in thread pool to avoid blocking event loop
+    def _call_openai():
+        return client.chat.completions.create(
+            model=settings.azure_openai_deployment,
+            max_completion_tokens=300,
+            messages=[
+                {"role": "system", "content": HINT_SYSTEM.format(level=level, subject=subject)},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Question: {question}\n\n"
+                        f"Student's previous attempts:\n{attempts_text}"
+                    ),
+                }
+            ],
+        )
 
+    response = await asyncio.to_thread(_call_openai)
     return response.choices[0].message.content.strip()
 
 
@@ -90,20 +94,24 @@ async def get_direct_answer(question: str, subject: str) -> str:
         if direct_answer:
             return direct_answer
 
-    response = client.chat.completions.create(
-        model=settings.azure_openai_deployment,
-        max_completion_tokens=150,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are StudyOwl, a homework assistant. The student has already seen all three hints. "
-                    "Provide the direct correct answer clearly and concisely. Do not add extra unrelated details."
-                ),
-            },
-            {"role": "user", "content": f"Question: {question}"},
-        ],
-    )
+    # Wrap sync OpenAI call in thread pool to avoid blocking event loop
+    def _call_openai():
+        return client.chat.completions.create(
+            model=settings.azure_openai_deployment,
+            max_completion_tokens=150,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are StudyOwl, a homework assistant. The student has already seen all three hints. "
+                        "Provide the direct correct answer clearly and concisely. Do not add extra unrelated details."
+                    ),
+                },
+                {"role": "user", "content": f"Question: {question}"},
+            ],
+        )
+
+    response = await asyncio.to_thread(_call_openai)
     return response.choices[0].message.content.strip()
 
 
@@ -112,20 +120,24 @@ async def detect_distress(message: str) -> bool:
     Use Claude to detect if a student message signals genuine distress.
     Returns True if the student should trigger a teacher alert immediately.
     """
-    response = client.chat.completions.create(
-        model=settings.azure_openai_deployment,
-        max_completion_tokens=10,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You detect student distress in homework messages. "
-                    "Reply with only 'yes' or 'no'. "
-                    "Examples of distress: 'I give up', 'I don't understand anything', "
-                    "'this makes no sense', 'I hate this', 'I can't do this'."
-                ),
-            },
-            {"role": "user", "content": message},
-        ],
-    )
+    # Wrap sync OpenAI call in thread pool to avoid blocking event loop
+    def _call_openai():
+        return client.chat.completions.create(
+            model=settings.azure_openai_deployment,
+            max_completion_tokens=10,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You detect student distress in homework messages. "
+                        "Reply with only 'yes' or 'no'. "
+                        "Examples of distress: 'I give up', 'I don't understand anything', "
+                        "'this makes no sense', 'I hate this', 'I can't do this'."
+                    ),
+                },
+                {"role": "user", "content": message},
+            ],
+        )
+
+    response = await asyncio.to_thread(_call_openai)
     return response.choices[0].message.content.strip().lower() == "yes"
