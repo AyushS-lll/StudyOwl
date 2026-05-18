@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import { api, StudentProgress } from '../api/studyowl'
+import { api } from '../api/studyowl'
+import type { StudentProgress } from '../api/studyowl'
 import HintBubble from '../components/HintBubble'
+import { useAuth } from '../auth/AuthContext'
 
 interface LearningResource {
   title: string
@@ -9,6 +11,7 @@ interface LearningResource {
 }
 
 export const StudentChat: React.FC = () => {
+  const { user } = useAuth()
   const [question, setQuestion] = useState('')
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
@@ -97,16 +100,16 @@ export const StudentChat: React.FC = () => {
   }
 
   useEffect(() => {
-    const studentId = localStorage.getItem('studyowl_user_id')
-    if (!studentId) {
+    // ProtectedRoute guarantees user is non-null here, but guard anyway.
+    if (!user) {
       setProgressError('Unable to load your progress.')
       return
     }
 
-    api.getProgress(studentId)
+    api.getProgress(user.id)
       .then((data) => setProgress(data))
       .catch((err) => setProgressError(err.message))
-  }, [])
+  }, [user])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/studyowl'
 
 interface AlertSession {
@@ -29,14 +30,24 @@ interface StudentProgress {
 }
 
 export const TeacherDash: React.FC = () => {
+  const navigate = useNavigate()
+  const { studentId: urlStudentId } = useParams<{ studentId?: string }>()
+
   const [alerts, setAlerts] = useState<AlertSession[]>([])
   const [metrics, setMetrics] = useState<TeacherMetrics | null>(null)
   const [students, setStudents] = useState<StudentSummary[]>([])
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
   const [selectedStudentProgress, setSelectedStudentProgress] = useState<StudentProgress | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingStudent, setLoadingStudent] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // URL is the source of truth for which student is selected. Fall back to the
+  // first loaded student when the route is bare /teacher.
+  const selectedStudentId = urlStudentId ?? students[0]?.id ?? null
+
+  const handleSelectStudent = (id: string) => {
+    navigate(`/teacher/students/${id}`)
+  }
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -49,9 +60,6 @@ export const TeacherDash: React.FC = () => {
         setAlerts(alertResponse.pending_alerts)
         setMetrics(metricsResponse)
         setStudents(studentListResponse.students)
-        if (studentListResponse.students.length > 0) {
-          setSelectedStudentId(studentListResponse.students[0].id)
-        }
       } catch (err) {
         setError((err as Error).message)
       } finally {
@@ -64,6 +72,7 @@ export const TeacherDash: React.FC = () => {
 
   useEffect(() => {
     if (!selectedStudentId) {
+      setSelectedStudentProgress(null)
       return
     }
 
@@ -107,7 +116,7 @@ export const TeacherDash: React.FC = () => {
                   {students.map((student) => (
                     <button
                       key={student.id}
-                      onClick={() => setSelectedStudentId(student.id)}
+                      onClick={() => handleSelectStudent(student.id)}
                       className={`block w-full rounded-2xl border px-4 py-3 text-left transition ${selectedStudentId === student.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-slate-50'}`}
                     >
                       <p className="font-semibold text-gray-900">{student.name}</p>
