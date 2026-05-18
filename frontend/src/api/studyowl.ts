@@ -113,25 +113,26 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 // ── API calls ────────────────────────────────────────────────────────────────
 
 export const api = {
-  /** Sign up a new account. */
-  signup: async (body: SignUpRequest): Promise<TokenResponse> => {
-    const result = await apiFetch<TokenResponse>("/api/auth/signup", {
+  /**
+   * Sign up a new account. The caller (AuthContext) is responsible for
+   * persisting the token; this function intentionally does not touch
+   * localStorage.
+   */
+  signup: (body: SignUpRequest): Promise<TokenResponse> =>
+    apiFetch<TokenResponse>("/api/auth/signup", {
       method: "POST",
       body: JSON.stringify(body),
-    });
-    localStorage.setItem("studyowl_token", result.access_token);
-    return result;
-  },
+    }),
 
-  /** Log in and store the JWT token. */
-  login: async (body: LoginRequest): Promise<TokenResponse> => {
-    const result = await apiFetch<TokenResponse>("/api/auth/login", {
+  /**
+   * Log in. The caller (AuthContext) is responsible for persisting the token;
+   * this function intentionally does not touch localStorage.
+   */
+  login: (body: LoginRequest): Promise<TokenResponse> =>
+    apiFetch<TokenResponse>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify(body),
-    });
-    localStorage.setItem("studyowl_token", result.access_token);
-    return result;
-  },
+    }),
 
   /** Fetch students list for teachers. */
   getStudentList: () =>
@@ -142,11 +143,6 @@ export const api = {
   /** Fetch a specific student's progress. */
   getStudentProgress: (studentId: string) =>
     apiFetch<StudentProgress>(`/api/student/${studentId}/progress`),
-
-  /** Log out by removing token. */
-  logout: () => {
-    localStorage.removeItem("studyowl_token");
-  },
 
   /** Start a new homework session and receive the first hint. */
   startSession: (body: StartSessionRequest) =>
@@ -167,14 +163,17 @@ export const api = {
     apiFetch<StudentProgress>(`/api/student/${studentId}/progress`),
 
   /** Fetch teacher classroom analytics and alert metrics. */
-  getTeacherMetrics: () =>
+  getTeacherMetrics: (opts?: { signal?: AbortSignal }) =>
     apiFetch<{ total_students: number; sessions_today: number; average_success_rate: number; pending_alerts: number }>(
-      "/api/alert/metrics"
+      "/api/alert/metrics",
+      { signal: opts?.signal },
     ),
 
   /** Fetch current active alerts for teachers. */
-  getAlerts: () => apiFetch<{ pending_alerts: Array<{ id: string; student_name: string; question: string; hint_level: number; fails_at_level: number; started_at: string }> }>(
-      "/api/alert"
+  getAlerts: (opts?: { signal?: AbortSignal }) =>
+    apiFetch<{ pending_alerts: Array<{ id: string; student_name: string; question: string; hint_level: number; fails_at_level: number; started_at: string }> }>(
+      "/api/alert",
+      { signal: opts?.signal },
     ),
 };
 
