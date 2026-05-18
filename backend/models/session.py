@@ -24,6 +24,12 @@ class Session(Base):
     teacher_alerted = Column(Boolean, default=False)
     photo_url = Column(String(500), nullable=True)  # Cloudflare R2 URL
     started_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_activity_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
     resolved_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
