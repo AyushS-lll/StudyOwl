@@ -162,14 +162,17 @@ export const api = {
     apiFetch<StudentProgress>(`/api/student/${studentId}/progress`),
 
   /** Fetch teacher classroom analytics and alert metrics. */
-  getTeacherMetrics: () =>
+  getTeacherMetrics: (opts?: { signal?: AbortSignal }) =>
     apiFetch<{ total_students: number; sessions_today: number; average_success_rate: number; pending_alerts: number }>(
-      "/api/alert/metrics"
+      "/api/alert/metrics",
+      { signal: opts?.signal },
     ),
 
   /** Fetch current active alerts for teachers. */
-  getAlerts: () => apiFetch<{ pending_alerts: Array<{ id: string; student_name: string; question: string; hint_level: number; fails_at_level: number; started_at: string }> }>(
-      "/api/alert"
+  getAlerts: (opts?: { signal?: AbortSignal }) =>
+    apiFetch<{ pending_alerts: Array<{ id: string; student_name: string; question: string; hint_level: number; fails_at_level: number; started_at: string }> }>(
+      "/api/alert",
+      { signal: opts?.signal },
     ),
 };
 
