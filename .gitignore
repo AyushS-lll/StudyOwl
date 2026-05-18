@@ -1,0 +1,6 @@
+.env
+.env.example
+.vscode
+.venv
+.devcontainer
+.claude

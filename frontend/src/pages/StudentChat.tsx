@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { api, StudentProgress } from '../api/studyowl'
 import HintBubble from '../components/HintBubble'
+import PhotoUpload from '../components/PhotoUpload'
+import ProgressChart from '../components/ProgressChart'
 
 interface LearningResource {
   title: string
@@ -10,6 +12,7 @@ interface LearningResource {
 
 export const StudentChat: React.FC = () => {
   const [question, setQuestion] = useState('')
+  const [photoB64, setPhotoB64] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
   const [hintLevel, setHintLevel] = useState<1 | 2 | 3>(1)
@@ -25,8 +28,8 @@ export const StudentChat: React.FC = () => {
   const [progressError, setProgressError] = useState<string | null>(null)
 
   const handleStartSession = async () => {
-    if (!question.trim()) {
-      setError('Please enter a homework question')
+    if (!question.trim() && !photoB64) {
+      setError('Please enter a homework question or attach a photo')
       return
     }
 
@@ -36,12 +39,16 @@ export const StudentChat: React.FC = () => {
     setLearningResources([])
 
     try {
-      const result = await api.startSession({ question })
+      const result = await api.startSession({
+        question,
+        photo_b64: photoB64 ?? undefined,
+      })
       setSessionId(result.session_id)
       setSessionStage('inProgress')
       setHint(result.hint)
       setHintLevel(result.hint_level)
       setAttempt('')
+      setPhotoB64(null)
       setStatus('idle')
       setMessage(null)
     } catch (err) {
@@ -86,6 +93,7 @@ export const StudentChat: React.FC = () => {
     setSessionId(null)
     setSessionStage('start')
     setQuestion('')
+    setPhotoB64(null)
     setHint(null)
     setHintLevel(1)
     setAttempt('')
@@ -139,6 +147,15 @@ export const StudentChat: React.FC = () => {
                     <p className="mt-2 text-3xl font-bold text-emerald-900">{progress.recent_sessions.length}</p>
                   </div>
                 </div>
+                {progress.subjects.length > 0 && (
+                  <ProgressChart
+                    data={progress.subjects.map((s) => ({
+                      subject: s.name,
+                      sessions: s.sessions,
+                      success_rate: Math.round(s.success_rate * 100),
+                    }))}
+                  />
+                )}
                 <div className="space-y-3">
                   {progress.subjects.map((subject) => (
                     <div key={subject.name} className="rounded-2xl bg-white p-4 border border-slate-200">
@@ -178,6 +195,21 @@ export const StudentChat: React.FC = () => {
                 placeholder="Type or paste your homework question here..."
                 className="w-full h-32 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
               />
+              <div className="mb-4">
+                <PhotoUpload onPhotoCapture={setPhotoB64} loading={status === 'loading'} />
+                {photoB64 && (
+                  <div className="mt-3 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm">
+                    <span className="text-indigo-900">📷 Photo attached — we'll read the problem from it.</span>
+                    <button
+                      type="button"
+                      onClick={() => setPhotoB64(null)}
+                      className="text-indigo-700 underline hover:text-indigo-900"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
               <button
                 onClick={handleStartSession}
                 disabled={status === 'loading'}

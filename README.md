@@ -134,7 +134,7 @@ A teacher alert is triggered if **any** of the following conditions are met:
 
 | Component | Tool |
 |---|---|
-| NLP / Hint generation | Claude API (Anthropic) |
+| NLP / Hint generation | Azure OpenAI (GPT-4) |
 | OCR (photo input) | Google Vision API / Tesseract |
 | Math verification | SymPy / Wolfram Alpha API |
 | Subject classifier | Fine-tuned classifier or LLM prompt routing |
@@ -148,7 +148,7 @@ A teacher alert is triggered if **any** of the following conditions are met:
 
 ### Prerequisites
 - Node.js 18+ or Python 3.10+
-- An [Anthropic API key](https://console.anthropic.com/)
+- An [Azure OpenAI resource](https://portal.azure.com/) with a GPT-4 deployment
 - PostgreSQL or Firebase project
 
 ### Installation
@@ -164,7 +164,9 @@ npm install
 Create a `.env` file in the root directory:
 
 ```env
-ANTHROPIC_API_KEY=your_api_key_here
+AZURE_OPENAI_API_KEY=your_azure_key_here
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_DEPLOYMENT=gpt-4
 GOOGLE_VISION_API_KEY=your_key_here
 WOLFRAM_API_KEY=your_key_here
 DATABASE_URL=your_database_url

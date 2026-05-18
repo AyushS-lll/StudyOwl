@@ -17,6 +17,7 @@ function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('studyowl_token'))
   const [userRole, setUserRole] = useState<'student' | 'teacher'>(savedRole)
   const [userId, setUserId] = useState<string | null>(localStorage.getItem('studyowl_user_id'))
+  const [userName, setUserName] = useState<string | null>(localStorage.getItem('studyowl_user_name'))
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
   const [formData, setFormData] = useState<FormData>({
     email: '',
@@ -48,8 +49,10 @@ function App() {
 
       setUserRole(result.role)
       setUserId(result.user_id)
+      setUserName(result.name)
       localStorage.setItem('studyowl_role', result.role)
       localStorage.setItem('studyowl_user_id', result.user_id)
+      localStorage.setItem('studyowl_user_name', result.name)
       setIsLoggedIn(true)
     } catch (error) {
       alert((error as Error).message)
@@ -60,7 +63,9 @@ function App() {
     api.logout()
     localStorage.removeItem('studyowl_role')
     localStorage.removeItem('studyowl_user_id')
+    localStorage.removeItem('studyowl_user_name')
     localStorage.removeItem('studyowl_token')
+    setUserName(null)
     setIsLoggedIn(false)
     setFormData({
       email: '',
@@ -223,12 +228,17 @@ function App() {
       <nav className="bg-indigo-900 text-white p-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <h1 className="text-2xl font-bold">🦉 StudyOwl</h1>
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition"
-          >
-            Log Out
-          </button>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-indigo-100">
+              Hi, {userName ?? (userRole === 'teacher' ? 'Teacher' : 'Student')} 👋
+            </span>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition"
+            >
+              Log Out
+            </button>
+          </div>
         </div>
       </nav>
 
