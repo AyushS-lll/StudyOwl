@@ -26,6 +26,7 @@ export interface TokenResponse {
   token_type: string;
   user_id: string;
   role: "student" | "teacher";
+  name: string;
 }
 
 export interface StartSessionRequest {
