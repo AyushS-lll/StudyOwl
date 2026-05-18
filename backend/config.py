@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     max_fails_before_alert: int = 4
     inactivity_timeout_minutes: int = 10
 
+    # Conversation memory — caps the number of prior hints + attempts fed back
+    # into the hint prompt. Higher = better continuity, more tokens per call.
+    conversation_history_limit: int = 5
+
+    # Clarifications — cap per hint level. Resets when hint level advances.
+    clarifications_per_level_limit: int = 3
+
     # Travily learning resource API
     travily_api_key: str = ""
     travily_api_url: str = ""
