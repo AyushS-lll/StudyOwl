@@ -48,6 +48,11 @@ export const StudentChat: React.FC = () => {
   const [finalAnswer, setFinalAnswer] = useState<string | null>(null)
   const [progress, setProgress] = useState<StudentProgress | null>(null)
   const [progressError, setProgressError] = useState<string | null>(null)
+  // Bumped after every session-state change that the history panel cares about
+  // (created / resolved / review / final-answer revealed). The panel watches
+  // this and re-fetches page 1 when it changes.
+  const [historyVersion, setHistoryVersion] = useState(0)
+  const bumpHistory = () => setHistoryVersion((v) => v + 1)
   const analyticsDialogRef = useRef<HTMLDialogElement>(null)
 
   const openAnalyticsDetails = () => analyticsDialogRef.current?.showModal()
@@ -108,6 +113,8 @@ export const StudentChat: React.FC = () => {
           setHintLevel(ev.hint_level)
           setSessionStage('inProgress')
           setAttempt('')
+          // New row exists server-side — surface it in the history panel as "open".
+          bumpHistory()
         } else if (event.type === 'chunk') {
           const ev = event as ChunkEvent
           setHint((curr) => (curr ?? '') + ev.text)
@@ -162,6 +169,8 @@ export const StudentChat: React.FC = () => {
             setFinalAnswer(null)
             setSessionStage('complete')
             setAttempt('')
+            // Session resolved — flip the row from "open" to "resolved".
+            bumpHistory()
             continue
           }
           // Wrong path.
@@ -184,6 +193,8 @@ export const StudentChat: React.FC = () => {
           // at all and never stream. Otherwise we reset and prepare to append.
           if (ev.review_mode || ev.final_answer != null) {
             setHint(ev.static_hint ?? null)
+            // Terminal wrong path — refresh history so status reflects server-side.
+            bumpHistory()
           } else {
             setHint('')
             willStreamHint = true
@@ -397,7 +408,11 @@ export const StudentChat: React.FC = () => {
 
         {user && (
           <div className="mb-6">
-            <QuestionHistoryPanel studentId={user.id} onSelect={handleHistorySelect} />
+            <QuestionHistoryPanel
+              studentId={user.id}
+              onSelect={handleHistorySelect}
+              version={historyVersion}
+            />
           </div>
         )}
 

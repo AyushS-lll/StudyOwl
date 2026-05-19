@@ -4,6 +4,12 @@ import { api, type HistorySession } from '../api/studyowl'
 interface Props {
   studentId: string
   onSelect: (questionText: string) => void
+  /**
+   * Bump this value (any monotonic counter) from the parent whenever the
+   * history should be re-fetched — e.g. after a session is created or resolved.
+   * Refetches page 1 and resets pagination.
+   */
+  version?: number
 }
 
 const PAGE_SIZE = 10
@@ -22,7 +28,7 @@ function relativeTime(iso: string): string {
   return rtf.format(Math.round(diff / day), 'day')
 }
 
-export function QuestionHistoryPanel({ studentId, onSelect }: Props) {
+export function QuestionHistoryPanel({ studentId, onSelect, version = 0 }: Props) {
   const [sessions, setSessions] = useState<HistorySession[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -52,7 +58,7 @@ export function QuestionHistoryPanel({ studentId, onSelect }: Props) {
       })
 
     return () => controller.abort()
-  }, [studentId])
+  }, [studentId, version])
 
   const handleLoadMore = async () => {
     setLoadingMore(true)
