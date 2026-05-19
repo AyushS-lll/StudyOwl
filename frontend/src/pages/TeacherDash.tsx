@@ -123,16 +123,16 @@ export const TeacherDash: React.FC = () => {
   const error = studentsError ?? studentDetailError
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4">
+    <div className="min-h-screen bg-gray-100 p-3 sm:p-4">
       <div className="max-w-6xl mx-auto">
-        <header className="mb-8 flex items-start justify-between gap-4 flex-wrap">
+        <header className="mb-6 sm:mb-8 flex items-start justify-between gap-3 sm:gap-4 flex-wrap">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1 sm:mb-2">
               🦉 Teacher Dashboard
             </h1>
-            <p className="text-gray-600">Monitor student progress and help when needed</p>
+            <p className="text-sm sm:text-base text-gray-600">Monitor student progress and help when needed</p>
           </div>
-          <div className="text-right text-xs text-slate-500" aria-live="polite">
+          <div className="text-left sm:text-right text-xs text-slate-500" aria-live="polite">
             <p>Auto-refreshing every {POLL_INTERVAL_MS / 1000}s</p>
             <p>Last updated: {formatTime(lastUpdated)}</p>
             {pollingError && (
@@ -145,7 +145,7 @@ export const TeacherDash: React.FC = () => {
 
         <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">📚 Student Roster</h2>
               {studentsLoading ? (
                 <p className="text-gray-600">Loading students...</p>
@@ -169,7 +169,7 @@ export const TeacherDash: React.FC = () => {
               )}
             </div>
 
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">⚠️ Alerts</h2>
               {alertsPoll.isLoading ? (
                 <p className="text-gray-600">Loading alerts...</p>
@@ -179,8 +179,8 @@ export const TeacherDash: React.FC = () => {
                 <div className="space-y-4">
                   {alerts.map((alert) => (
                     <div key={alert.id} className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4">
-                      <p className="font-semibold text-gray-900">{alert.student_name}</p>
-                      <p className="text-sm text-gray-600 mt-1">Q: {alert.question.substring(0, 100)}...</p>
+                      <p className="font-semibold text-gray-900 break-words">{alert.student_name}</p>
+                      <p className="text-sm text-gray-600 mt-1 break-words">Q: {alert.question.substring(0, 100)}...</p>
                       <p className="text-sm text-gray-600 mt-1">Hint Level: {alert.hint_level}/3 | Failed: {alert.fails_at_level}</p>
                     </div>
                   ))}
@@ -190,19 +190,19 @@ export const TeacherDash: React.FC = () => {
           </div>
 
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">📊 Class Overview</h2>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 <div className="text-center rounded-2xl bg-slate-50 p-4">
-                  <p className="text-3xl font-bold text-indigo-600">{metrics ? metrics.total_students : '—'}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-indigo-600">{metrics ? metrics.total_students : '—'}</p>
                   <p className="text-gray-600 text-sm">Total Students</p>
                 </div>
                 <div className="text-center rounded-2xl bg-slate-50 p-4">
-                  <p className="text-3xl font-bold text-green-600">{metrics ? metrics.sessions_today : '—'}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-green-600">{metrics ? metrics.sessions_today : '—'}</p>
                   <p className="text-gray-600 text-sm">Sessions Today</p>
                 </div>
                 <div className="text-center rounded-2xl bg-slate-50 p-4">
-                  <p className="text-3xl font-bold text-blue-600">{metrics ? `${metrics.average_success_rate}%` : '—'}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-blue-600">{metrics ? `${metrics.average_success_rate}%` : '—'}</p>
                   <p className="text-gray-600 text-sm">Success Rate</p>
                 </div>
               </div>
@@ -211,13 +211,13 @@ export const TeacherDash: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center justify-between gap-4 mb-4">
-                <div>
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="min-w-0">
                   <h2 className="text-xl font-bold text-gray-800">Student Analytics</h2>
                   <p className="text-sm text-gray-500">View details for the selected student.</p>
                 </div>
-                <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">
+                <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700 whitespace-nowrap">
                   {selectedStudentId ? 'Student selected' : 'Pick a student'}
                 </span>
               </div>
@@ -248,7 +248,7 @@ export const TeacherDash: React.FC = () => {
                     <div className="mt-3 space-y-3">
                       {selectedStudentProgress.recent_sessions.map((session) => (
                         <div key={session.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-                          <p className="font-semibold text-slate-900">{session.question}</p>
+                          <p className="font-semibold text-slate-900 break-words">{session.question}</p>
                           <p className="text-sm text-slate-500">{session.subject} • {session.resolved ? 'Resolved' : 'Open'}</p>
                         </div>
                       ))}

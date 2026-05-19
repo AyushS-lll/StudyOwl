@@ -81,6 +81,22 @@ export interface StudentProgress {
   recent_sessions: RecentSession[];
 }
 
+export interface HistorySession {
+  id: string;
+  question: string;
+  subject: string;
+  resolved: boolean;
+  started_at: string;
+  resolved_at: string | null;
+}
+
+export interface StudentSessionHistoryResponse {
+  sessions: HistorySession[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -161,6 +177,21 @@ export const api = {
   /** Fetch a student's progress data for the dashboard. */
   getProgress: (studentId: string) =>
     apiFetch<StudentProgress>(`/api/student/${studentId}/progress`),
+
+  /** Fetch a paginated history of a student's past sessions (full untruncated questions). */
+  getStudentSessions: (
+    studentId: string,
+    opts?: { limit?: number; offset?: number; signal?: AbortSignal },
+  ) => {
+    const params = new URLSearchParams();
+    if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
+    if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
+    const qs = params.toString();
+    return apiFetch<StudentSessionHistoryResponse>(
+      `/api/student/${studentId}/sessions${qs ? `?${qs}` : ""}`,
+      { signal: opts?.signal },
+    );
+  },
 
   /** Fetch teacher classroom analytics and alert metrics. */
   getTeacherMetrics: (opts?: { signal?: AbortSignal }) =>

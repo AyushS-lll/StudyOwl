@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api/studyowl'
 import type { StudentProgress } from '../api/studyowl'
 import HintBubble from '../components/HintBubble'
 import { useAuth } from '../auth/AuthContext'
 import PhotoUpload from '../components/PhotoUpload'
 import ProgressChart from '../components/ProgressChart'
+import QuestionHistoryPanel from '../components/QuestionHistoryPanel'
 
 interface LearningResource {
   title: string
@@ -29,6 +30,13 @@ export const StudentChat: React.FC = () => {
   const [finalAnswer, setFinalAnswer] = useState<string | null>(null)
   const [progress, setProgress] = useState<StudentProgress | null>(null)
   const [progressError, setProgressError] = useState<string | null>(null)
+  const analyticsDialogRef = useRef<HTMLDialogElement>(null)
+
+  const openAnalyticsDetails = () => analyticsDialogRef.current?.showModal()
+  const closeAnalyticsDetails = () => analyticsDialogRef.current?.close()
+  const handleAnalyticsBackdrop = (e: React.MouseEvent<HTMLDialogElement>) => {
+    if (e.target === analyticsDialogRef.current) closeAnalyticsDetails()
+  }
 
   const handleStartSession = async () => {
     if (!question.trim() && !photoB64) {
@@ -107,6 +115,16 @@ export const StudentChat: React.FC = () => {
     setLearningResources([])
   }
 
+  const handleHistorySelect = (text: string) => {
+    if (sessionStage !== 'start') handleNextProblem()
+    setQuestion(text)
+    setPhotoB64(null)
+    setError(null)
+    document
+      .getElementById('question-textarea')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
   useEffect(() => {
     // ProtectedRoute guarantees user is non-null here, but guard anyway.
     if (!user) {
@@ -120,23 +138,39 @@ export const StudentChat: React.FC = () => {
   }, [user])
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-3 sm:p-4">
       <div className="max-w-2xl mx-auto">
-        <header className="text-center mb-8 pt-8">
-          <h1 className="text-4xl font-bold text-indigo-900 mb-2">
+        <header className="text-center mb-6 sm:mb-8 pt-4 sm:pt-8">
+          <h1 className="text-3xl sm:text-4xl font-bold text-indigo-900 mb-2">
             🦉 StudyOwl
           </h1>
           <p className="text-gray-600">Your AI Homework Assistant</p>
         </header>
 
-        <div className="grid gap-6 mb-6 md:grid-cols-3">
-          <div className="col-span-2 rounded-3xl bg-white/90 p-6 shadow-lg border border-indigo-100">
-            <h2 className="text-xl font-semibold text-indigo-900 mb-3">Homework Analytics</h2>
-            {progressError ? (
-              <p className="text-sm text-red-600">{progressError}</p>
-            ) : progress ? (
-              <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:gap-6 mb-6 lg:grid-cols-3 items-start">
+          <div className="lg:col-span-2 rounded-3xl bg-white/90 shadow-lg border border-indigo-100 overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 sm:px-6 pt-4 sm:pt-6 pb-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xl" aria-hidden="true">📊</span>
+                <h2 className="text-xl font-semibold text-indigo-900 truncate">Homework Analytics</h2>
+              </div>
+              {progress && progress.subjects.length > 0 && (
+                <button
+                  type="button"
+                  onClick={openAnalyticsDetails}
+                  className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs sm:text-sm font-semibold text-indigo-700 hover:bg-indigo-100 transition whitespace-nowrap"
+                >
+                  View details
+                  <span aria-hidden="true">→</span>
+                </button>
+              )}
+            </div>
+
+            <div className="px-4 sm:px-6 pb-4 sm:pb-6">
+              {progressError ? (
+                <p className="text-sm text-red-600">{progressError}</p>
+              ) : progress ? (
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                   <div className="rounded-2xl bg-indigo-50 p-4">
                     <p className="text-xs uppercase tracking-wide text-indigo-600">Subjects Tracked</p>
                     <p className="mt-2 text-3xl font-bold text-indigo-900">{progress.subjects.length}</p>
@@ -150,6 +184,52 @@ export const StudentChat: React.FC = () => {
                     <p className="mt-2 text-3xl font-bold text-emerald-900">{progress.recent_sessions.length}</p>
                   </div>
                 </div>
+              ) : (
+                <p className="text-sm text-slate-500">Loading your learning progress...</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white/90 p-4 sm:p-6 shadow-lg border border-indigo-100">
+            <h2 className="text-xl font-semibold text-indigo-900 mb-3">Quick Tip</h2>
+            <p className="text-sm text-slate-600">
+              Track your progress on each subject, then use the hints below to build confidence before the final step.
+            </p>
+          </div>
+        </div>
+
+        <dialog
+          ref={analyticsDialogRef}
+          onClick={handleAnalyticsBackdrop}
+          aria-labelledby="analytics-dialog-title"
+          className="m-auto rounded-3xl bg-white shadow-2xl p-0 backdrop:bg-slate-900/50 w-[min(640px,calc(100vw-1.5rem))] max-h-[calc(100vh-2rem)]"
+        >
+          {progress && (
+            <div className="flex flex-col max-h-[inherit]">
+              <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 sm:px-6 pt-5 sm:pt-6 pb-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xl" aria-hidden="true">📊</span>
+                  <h3 id="analytics-dialog-title" className="text-lg sm:text-xl font-semibold text-indigo-900 truncate">
+                    Analytics — Details
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeAnalyticsDetails}
+                  aria-label="Close details"
+                  className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path
+                      fillRule="evenodd"
+                      d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </button>
+              </header>
+
+              <div className="overflow-y-auto px-5 sm:px-6 py-4 sm:py-5 space-y-4">
                 {progress.subjects.length > 0 && (
                   <ProgressChart
                     data={progress.subjects.map((s) => ({
@@ -161,38 +241,36 @@ export const StudentChat: React.FC = () => {
                 )}
                 <div className="space-y-3">
                   {progress.subjects.map((subject) => (
-                    <div key={subject.name} className="rounded-2xl bg-white p-4 border border-slate-200">
+                    <div key={subject.name} className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
                       <div className="flex items-center justify-between gap-4">
                         <p className="font-semibold text-slate-900">{subject.name}</p>
                         <p className="text-sm text-slate-500">{subject.sessions} sessions</p>
                       </div>
-                      <div className="mt-3 h-2 rounded-full bg-slate-100">
+                      <div className="mt-3 h-2 rounded-full bg-white">
                         <div className="h-full rounded-full bg-indigo-500" style={{ width: `${subject.success_rate * 100}%` }} />
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
-            ) : (
-              <p className="text-sm text-slate-500">Loading your learning progress...</p>
-            )}
-          </div>
+            </div>
+          )}
+        </dialog>
 
-          <div className="rounded-3xl bg-white/90 p-6 shadow-lg border border-indigo-100">
-            <h2 className="text-xl font-semibold text-indigo-900 mb-3">Quick Tip</h2>
-            <p className="text-sm text-slate-600">
-              Track your progress on each subject, then use the hints below to build confidence before the final step.
-            </p>
+        {user && (
+          <div className="mb-6">
+            <QuestionHistoryPanel studentId={user.id} onSelect={handleHistorySelect} />
           </div>
-        </div>
+        )}
 
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-6">
           {sessionStage === 'start' ? (
             <>
               <h2 className="text-2xl font-bold text-gray-800 mb-4">
                 What are you working on?
               </h2>
               <textarea
+                id="question-textarea"
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 placeholder="Type or paste your homework question here..."
@@ -230,7 +308,7 @@ export const StudentChat: React.FC = () => {
               )}
               <div className="mb-6">
                 <p className="text-gray-600 mb-2">Question:</p>
-                <p className="text-gray-900 bg-gray-50 p-3 rounded-lg">
+                <p className="text-gray-900 bg-gray-50 p-3 rounded-lg whitespace-pre-wrap break-words">
                   {question}
                 </p>
               </div>
@@ -265,7 +343,7 @@ export const StudentChat: React.FC = () => {
                         <p className="text-orange-900 font-semibold mb-4 text-center">
                           Here are some resources to help you understand this topic better:
                         </p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-6">
                           {learningResources.map((resource, index) => (
                             <div
                               key={index}

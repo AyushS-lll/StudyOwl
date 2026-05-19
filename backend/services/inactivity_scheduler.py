@@ -67,7 +67,7 @@ async def _tick() -> int:
                     f"NOW() - INTERVAL '{max_age_hours} hours'"
                 ),
             )
-            .with_for_update(skip_locked=True)
+            .with_for_update(of=Session, skip_locked=True)
         )
         result = await db.execute(stmt)
         stuck_sessions = result.unique().scalars().all()

@@ -69,7 +69,7 @@ export function Login() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-sky-900 text-white overflow-hidden relative">
-      <div className="pointer-events-none absolute inset-0 opacity-30">
+      <div className="pointer-events-none absolute inset-0 opacity-30 hidden md:block">
         <div className="absolute -left-10 top-10 text-[5rem] text-white/10">∑</div>
         <div className="absolute right-8 top-24 text-[4rem] text-white/10">π</div>
         <div className="absolute left-1/2 top-1/3 text-[6rem] text-white/10">√</div>
@@ -77,23 +77,23 @@ export function Login() {
         <div className="absolute left-10 bottom-10 text-[4rem] text-white/10">α</div>
       </div>
 
-      <div className="relative max-w-5xl mx-auto px-6 py-12 lg:flex lg:items-center lg:gap-12">
+      <div className="relative max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12 lg:flex lg:items-center lg:gap-12">
         <div className="lg:w-1/2 space-y-6">
           <div className="inline-flex items-center gap-3 rounded-full bg-white/10 px-4 py-2 text-sm text-slate-100 backdrop-blur-sm">
             <span className="text-xl">🦉</span>
             Learn faster with Socratic hints and smart feedback.
           </div>
           <div>
-            <h1 className="text-5xl font-extrabold tracking-tight">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight break-words">
               StudyOwl makes homework smarter.
             </h1>
-            <p className="mt-4 max-w-xl text-lg text-slate-200">
+            <p className="mt-4 max-w-xl text-base sm:text-lg text-slate-200">
               Get step-by-step guidance, view your progress, and switch between student or teacher dashboards with a single login.
             </p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-slate-300 mb-3">Choose your workspace</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <button
                 type="button"
                 onClick={() => setFormData({ ...formData, role: 'student' })}
@@ -114,12 +114,12 @@ export function Login() {
           </div>
         </div>
 
-        <div className="mt-10 lg:mt-0 lg:w-1/2">
-          <div className="rounded-3xl bg-slate-900/95 border border-white/10 p-8 shadow-2xl backdrop-blur-sm">
-            <div className="mb-6 flex items-center justify-between">
+        <div className="mt-8 lg:mt-0 lg:w-1/2">
+          <div className="rounded-3xl bg-slate-900/95 border border-white/10 p-5 sm:p-8 shadow-2xl backdrop-blur-sm">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-3xl font-bold">{authMode === 'login' ? 'Welcome back' : 'Create account'}</h2>
-                <p className="text-slate-400">Sign in as a student or teacher to continue.</p>
+                <h2 className="text-2xl sm:text-3xl font-bold">{authMode === 'login' ? 'Welcome back' : 'Create account'}</h2>
+                <p className="text-sm sm:text-base text-slate-400">Sign in as a student or teacher to continue.</p>
               </div>
               <button
                 type="button"
