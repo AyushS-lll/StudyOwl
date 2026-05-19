@@ -1,26 +1,24 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/studyowl'
+import type {
+  TeacherAlert,
+  TeacherAlertsResponse,
+  TeacherMetricsResponse,
+} from '../api/studyowl'
 import { usePolling } from '../hooks/usePolling'
 
-interface AlertSession {
-  id: string
-  student_name: string
-  question: string
-  hint_level: number
-  fails_at_level: number
-  started_at: string
+const SEVERITY_BADGE: Record<TeacherAlert['severity'], { label: string; classes: string }> = {
+  high: { label: '🔴 HIGH', classes: 'bg-red-100 text-red-800 border-red-300' },
+  medium: { label: '🟡 MED', classes: 'bg-amber-100 text-amber-800 border-amber-300' },
+  low: { label: '🔵 LOW', classes: 'bg-sky-100 text-sky-800 border-sky-300' },
 }
 
-interface AlertsResponse {
-  pending_alerts: AlertSession[]
-}
-
-interface TeacherMetrics {
-  total_students: number
-  sessions_today: number
-  average_success_rate: number
-  pending_alerts: number
+const REASON_LABEL: Record<TeacherAlert['reason_kind'], string> = {
+  distress: 'Distress',
+  repeated_failure: 'Stuck',
+  inactivity: 'Inactive',
+  legacy: 'Legacy',
 }
 
 interface StudentSummary {
@@ -51,6 +49,10 @@ export const TeacherDash: React.FC = () => {
   const [selectedStudentProgress, setSelectedStudentProgress] = useState<StudentProgress | null>(null)
   const [loadingStudent, setLoadingStudent] = useState(false)
   const [studentDetailError, setStudentDetailError] = useState<string | null>(null)
+  // In-flight ack/resolve to prevent double-clicks. Keyed by alert ID.
+  const [actionInFlight, setActionInFlight] = useState<Record<string, boolean>>({})
+  // Errors from ack/resolve actions (separate from polling errors).
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const fetchAlerts = useCallback(
     (signal: AbortSignal) => api.getAlerts({ signal }),
@@ -61,8 +63,8 @@ export const TeacherDash: React.FC = () => {
     [],
   )
 
-  const alertsPoll = usePolling<AlertsResponse>({ fetcher: fetchAlerts, intervalMs: POLL_INTERVAL_MS })
-  const metricsPoll = usePolling<TeacherMetrics>({ fetcher: fetchMetrics, intervalMs: POLL_INTERVAL_MS })
+  const alertsPoll = usePolling<TeacherAlertsResponse>({ fetcher: fetchAlerts, intervalMs: POLL_INTERVAL_MS })
+  const metricsPoll = usePolling<TeacherMetricsResponse>({ fetcher: fetchMetrics, intervalMs: POLL_INTERVAL_MS })
 
   const alerts = alertsPoll.data?.pending_alerts ?? []
   const metrics = metricsPoll.data
@@ -98,6 +100,47 @@ export const TeacherDash: React.FC = () => {
     loadStudents()
   }, [])
 
+  // Alert state is owned by usePolling — we trigger a refresh after server-side
+  // mutation rather than optimistically rewriting local state. Snappy
+  // optimistic UX from the perf branch was dropped during the main merge
+  // because usePolling doesn't expose setData; revisit by extending the hook.
+  const handleAcknowledge = async (alert: TeacherAlert) => {
+    if (actionInFlight[alert.id]) return
+    setActionInFlight((m) => ({ ...m, [alert.id]: true }))
+    setActionError(null)
+    try {
+      await api.acknowledgeAlert(alert.id)
+      alertsPoll.refresh()
+    } catch (err) {
+      setActionError((err as Error).message)
+    } finally {
+      setActionInFlight((m) => {
+        const next = { ...m }
+        delete next[alert.id]
+        return next
+      })
+    }
+  }
+
+  const handleResolve = async (alert: TeacherAlert) => {
+    if (actionInFlight[alert.id]) return
+    setActionInFlight((m) => ({ ...m, [alert.id]: true }))
+    setActionError(null)
+    try {
+      await api.resolveAlert(alert.id)
+      alertsPoll.refresh()
+      metricsPoll.refresh()
+    } catch (err) {
+      setActionError((err as Error).message)
+    } finally {
+      setActionInFlight((m) => {
+        const next = { ...m }
+        delete next[alert.id]
+        return next
+      })
+    }
+  }
+
   useEffect(() => {
     if (!selectedStudentId) {
       setSelectedStudentProgress(null)
@@ -120,7 +163,7 @@ export const TeacherDash: React.FC = () => {
     loadStudentProgress()
   }, [selectedStudentId])
 
-  const error = studentsError ?? studentDetailError
+  const error = studentsError ?? studentDetailError ?? actionError
 
   return (
     <div className="min-h-screen bg-gray-100 p-3 sm:p-4">
@@ -177,13 +220,60 @@ export const TeacherDash: React.FC = () => {
                 <p className="text-gray-600">No active alerts right now.</p>
               ) : (
                 <div className="space-y-4">
-                  {alerts.map((alert) => (
-                    <div key={alert.id} className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4">
-                      <p className="font-semibold text-gray-900 break-words">{alert.student_name}</p>
-                      <p className="text-sm text-gray-600 mt-1 break-words">Q: {alert.question.substring(0, 100)}...</p>
-                      <p className="text-sm text-gray-600 mt-1">Hint Level: {alert.hint_level}/3 | Failed: {alert.fails_at_level}</p>
-                    </div>
-                  ))}
+                  {alerts.map((alert) => {
+                    const badge = SEVERITY_BADGE[alert.severity]
+                    const busy = !!actionInFlight[alert.id]
+                    return (
+                      <div
+                        key={alert.id}
+                        className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold text-gray-900 break-words">{alert.student_name}</p>
+                          <span
+                            className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${badge.classes} whitespace-nowrap`}
+                            title={`${REASON_LABEL[alert.reason_kind]}: ${alert.reason_text}`}
+                          >
+                            {badge.label}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          {REASON_LABEL[alert.reason_kind]} · Hint {alert.hint_level}/3 · {alert.fails_at_level} fails
+                        </p>
+                        <p className="text-sm text-gray-700 break-words">
+                          Q: {alert.question.substring(0, 120)}{alert.question.length > 120 ? '…' : ''}
+                        </p>
+                        {alert.notification_status === 'failed' && (
+                          <p className="text-xs text-red-700">⚠️ Delivery failed</p>
+                        )}
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                          <span className="text-xs text-gray-500">
+                            {alert.acknowledged_at
+                              ? `Ack'd by ${alert.acknowledged_by_name ?? 'someone'}`
+                              : 'Not yet acknowledged'}
+                          </span>
+                          <div className="flex gap-2">
+                            {!alert.acknowledged_at && (
+                              <button
+                                disabled={busy}
+                                onClick={() => handleAcknowledge(alert)}
+                                className="text-xs px-3 py-1 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition"
+                              >
+                                {busy ? '…' : 'Acknowledge'}
+                              </button>
+                            )}
+                            <button
+                              disabled={busy}
+                              onClick={() => handleResolve(alert)}
+                              className="text-xs px-3 py-1 rounded-full bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition"
+                            >
+                              {busy ? '…' : 'Resolve'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

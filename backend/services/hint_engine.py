@@ -11,6 +11,8 @@ Hint levels:
 """
 
 import asyncio
+from collections.abc import AsyncIterator
+
 from openai import AzureOpenAI
 from config import settings
 from . import answer_verifier
@@ -38,11 +40,65 @@ Rules:
 """
 
 
+def _build_hint_user_message(
+    question: str,
+    previous_hints: list[str],
+    previous_attempts: list[str],
+    previous_clarifications: list[tuple[str, str]] | None = None,
+) -> str:
+    """
+    Build the user-message body for a hint request, including the conversation
+    history. Capped at `settings.conversation_history_limit` entries per kind
+    so prompts can't balloon on long sessions.
+
+    `previous_clarifications` is a list of (student_question, ai_clarification)
+    pairs — passed only by the clarify path (PR 8).
+    """
+    limit = settings.conversation_history_limit
+    parts = [f"Question: {question}"]
+
+    # Cap each list to the last N entries (most recent are most relevant).
+    hints_tail = previous_hints[-limit:] if previous_hints else []
+    attempts_tail = previous_attempts[-limit:] if previous_attempts else []
+    clar_tail = (
+        (previous_clarifications or [])[-limit:]
+    )
+
+    if hints_tail:
+        rendered = "\n".join(f"{i}. {h}" for i, h in enumerate(hints_tail, 1))
+        parts.append(
+            "Hints you have ALREADY given to the student. "
+            "Do NOT repeat or paraphrase any of these — build on them:\n"
+            f"{rendered}"
+        )
+
+    if clar_tail:
+        rendered = "\n".join(
+            f"{i}. Student asked: {q}\n   You clarified: {a}"
+            for i, (q, a) in enumerate(clar_tail, 1)
+        )
+        parts.append(
+            "Clarifying exchanges that have already happened. "
+            "Do not contradict yourself:\n"
+            f"{rendered}"
+        )
+
+    if attempts_tail:
+        rendered = "\n".join(f"- {a}" for a in attempts_tail)
+        parts.append(f"Student's previous wrong attempts:\n{rendered}")
+    else:
+        parts.append("Student's previous wrong attempts: None yet.")
+
+    return "\n\n".join(parts)
+
+
 async def get_hint(
     question: str,
     subject: str,
     level: int,
     previous_attempts: list[str],
+    previous_hints: list[str] | None = None,
+    previous_clarifications: list[tuple[str, str]] | None = None,
 ) -> str:
     """
     Generate a Socratic hint for the given question at the specified hint level.
@@ -51,15 +107,21 @@ async def get_hint(
         question: The original homework question.
         subject: Classified subject area (math, science, english, history, other).
         level: Current hint level (1, 2, or 3).
-        previous_attempts: List of the student's previous answer attempts.
+        previous_attempts: List of the student's previous wrong attempts.
+        previous_hints: Hints already shown for this session. The AI is told
+            explicitly not to repeat or paraphrase them. Default empty list.
+        previous_clarifications: (student_question, ai_clarification) pairs from
+            the clarify path. Threaded into the prompt so the AI is consistent
+            across hints and clarifications.
 
     Returns:
         A hint string from AzureOpenAI, appropriate to the hint level.
     """
-    attempts_text = (
-        "\n".join(f"- {a}" for a in previous_attempts)
-        if previous_attempts
-        else "None yet."
+    user_message = _build_hint_user_message(
+        question=question,
+        previous_hints=previous_hints or [],
+        previous_attempts=previous_attempts,
+        previous_clarifications=previous_clarifications,
     )
 
     # Wrap sync OpenAI call in thread pool to avoid blocking event loop
@@ -69,18 +131,146 @@ async def get_hint(
             max_completion_tokens=300,
             messages=[
                 {"role": "system", "content": HINT_SYSTEM.format(level=level, subject=subject)},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Question: {question}\n\n"
-                        f"Student's previous attempts:\n{attempts_text}"
-                    ),
-                }
+                {"role": "user", "content": user_message},
             ],
         )
 
     response = await asyncio.to_thread(_call_openai)
     return response.choices[0].message.content.strip()
+
+
+CLARIFY_SYSTEM = """
+You are StudyOwl, a Socratic homework assistant. The student has a follow-up
+question about your most recent hint. Clarify the concept they are asking
+about WITHOUT giving away the answer to the homework question and WITHOUT
+revealing the next hint level. Keep it short and conceptual.
+
+Subject area: {subject}
+Current hint level: {level}/3 — do not advance past this level.
+
+Rules:
+- Maximum 3 sentences.
+- Do NOT solve or partially solve the homework question.
+- Do NOT name the formula or method if we're still at Level 1.
+- End with one short encouraging sentence.
+"""
+
+
+async def clarify(
+    question: str,
+    subject: str,
+    level: int,
+    student_message: str,
+    previous_hints: list[str],
+    previous_attempts: list[str],
+    previous_clarifications: list[tuple[str, str]],
+) -> str:
+    """
+    Answer a student's clarifying question about the current hint without
+    advancing them or revealing the homework answer.
+    """
+    history = _build_hint_user_message(
+        question=question,
+        previous_hints=previous_hints,
+        previous_attempts=previous_attempts,
+        previous_clarifications=previous_clarifications,
+    )
+    user_message = (
+        f"{history}\n\n"
+        f"The student is now asking a clarifying question (NOT submitting an answer):\n"
+        f"{student_message}\n\n"
+        f"Clarify the concept they're confused about. Stay at Level {level}; "
+        f"do not reveal the answer."
+    )
+
+    def _call_openai():
+        return client.chat.completions.create(
+            model=settings.azure_openai_deployment,
+            max_completion_tokens=250,
+            messages=[
+                {"role": "system", "content": CLARIFY_SYSTEM.format(level=level, subject=subject)},
+                {"role": "user", "content": user_message},
+            ],
+        )
+
+    response = await asyncio.to_thread(_call_openai)
+    return response.choices[0].message.content.strip()
+
+
+async def stream_hint(
+    question: str,
+    subject: str,
+    level: int,
+    previous_attempts: list[str],
+    previous_hints: list[str] | None = None,
+    previous_clarifications: list[tuple[str, str]] | None = None,
+) -> AsyncIterator[str]:
+    """
+    Stream a hint as text chunks (token-ish granularity from Azure OpenAI).
+
+    Why a thread-pool bridge: the `openai` package's sync `Stream` object is
+    iterated synchronously. Iterating it on the event loop blocks. We pull
+    from it in a dedicated thread and forward chunks via an asyncio.Queue.
+
+    Cancellation: the caller (FastAPI's StreamingResponse generator) closes
+    this generator on client disconnect, which raises GeneratorExit. We catch
+    it, signal the producer thread via the queue sentinel, and let the upstream
+    Stream finalize on its own (the openai client closes its HTTP connection
+    when the iterator goes out of scope).
+    """
+    user_message = _build_hint_user_message(
+        question=question,
+        previous_hints=previous_hints or [],
+        previous_attempts=previous_attempts,
+        previous_clarifications=previous_clarifications,
+    )
+
+    queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=64)
+    loop = asyncio.get_running_loop()
+    cancel = asyncio.Event()
+
+    def _producer():
+        try:
+            stream = client.chat.completions.create(
+                model=settings.azure_openai_deployment,
+                max_completion_tokens=300,
+                stream=True,
+                messages=[
+                    {"role": "system", "content": HINT_SYSTEM.format(level=level, subject=subject)},
+                    {"role": "user", "content": user_message},
+                ],
+            )
+            for chunk in stream:
+                if cancel.is_set():
+                    break
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                text = getattr(delta, "content", None)
+                if text:
+                    asyncio.run_coroutine_threadsafe(queue.put(text), loop).result()
+        finally:
+            # Sentinel: tells the consumer we're done (either naturally or on cancel).
+            asyncio.run_coroutine_threadsafe(queue.put(None), loop)
+
+    producer_task = asyncio.create_task(asyncio.to_thread(_producer))
+
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield item
+    except GeneratorExit:
+        # Client disconnected — tell the producer to stop and bail out.
+        cancel.set()
+        raise
+    finally:
+        # Ensure the thread wraps up so we don't leak it.
+        try:
+            await asyncio.wait_for(producer_task, timeout=2.0)
+        except (asyncio.TimeoutError, Exception):
+            pass
 
 
 async def get_direct_answer(question: str, subject: str) -> str:

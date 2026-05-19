@@ -1,6 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api/studyowl'
-import type { StudentProgress } from '../api/studyowl'
+import type {
+  AttemptEvent,
+  ChunkEvent,
+  ErrorEvent,
+  StartSessionCreatedEvent,
+  StartSessionEvent,
+  StudentProgress,
+  VerdictEvent,
+} from '../api/studyowl'
 import HintBubble from '../components/HintBubble'
 import { useAuth } from '../auth/AuthContext'
 import PhotoUpload from '../components/PhotoUpload'
@@ -12,6 +20,16 @@ interface LearningResource {
   url?: string
   summary?: string
 }
+
+interface ClarifyEntry {
+  question: string
+  response: string
+}
+
+// Mirrors the backend default (settings.clarifications_per_level_limit).
+// If backend tightens the cap mid-deploy, the API still rejects past this; the
+// constant just controls the optimistic UX before the round-trip.
+const CLARIFICATIONS_PER_LEVEL = 3
 
 export const StudentChat: React.FC = () => {
   const { user } = useAuth()
@@ -38,67 +56,162 @@ export const StudentChat: React.FC = () => {
     if (e.target === analyticsDialogRef.current) closeAnalyticsDetails()
   }
 
+  // Clarifications (PR 8) — state for "Ask a question" UX.
+  const [clarifyHistory, setClarifyHistory] = useState<ClarifyEntry[]>([])
+  const [clarifyRemaining, setClarifyRemaining] = useState<number>(CLARIFICATIONS_PER_LEVEL)
+  const [clarifyMode, setClarifyMode] = useState<boolean>(false)
+  const [clarifyText, setClarifyText] = useState<string>('')
+  const [clarifyLoading, setClarifyLoading] = useState<boolean>(false)
+  const [clarifyError, setClarifyError] = useState<string | null>(null)
+
+  // Streaming (PR 9) — one in-flight AbortController at a time. Cancelled on
+  // "Next Problem", on a new request, and on unmount.
+  const streamAbortRef = useRef<AbortController | null>(null)
+
+  const startNewAbort = (): AbortController => {
+    streamAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    streamAbortRef.current = ctrl
+    return ctrl
+  }
+
+  // Cancel any in-flight stream when the component unmounts.
+  useEffect(() => {
+    return () => {
+      streamAbortRef.current?.abort()
+    }
+  }, [])
+
   const handleStartSession = async () => {
     if (!question.trim() && !photoB64) {
       setError('Please enter a homework question or attach a photo')
       return
     }
 
+    const ctrl = startNewAbort()
     setStatus('loading')
     setError(null)
     setReviewMode(false)
     setLearningResources([])
+    setHint('')
+    setMessage(null)
 
     try {
-      const result = await api.startSession({
-        question,
-        photo_b64: photoB64 ?? undefined,
-      })
-      setSessionId(result.session_id)
-      setSessionStage('inProgress')
-      setHint(result.hint)
-      setHintLevel(result.hint_level)
-      setAttempt('')
+      const stream = await api.startSessionStream(
+        { question, photo_b64: photoB64 ?? undefined },
+        ctrl.signal,
+      )
+      for await (const event of stream as AsyncIterable<StartSessionEvent>) {
+        if (event.type === 'session_created') {
+          const ev = event as StartSessionCreatedEvent
+          setSessionId(ev.session_id)
+          setHintLevel(ev.hint_level)
+          setSessionStage('inProgress')
+          setAttempt('')
+        } else if (event.type === 'chunk') {
+          const ev = event as ChunkEvent
+          setHint((curr) => (curr ?? '') + ev.text)
+        } else if (event.type === 'error') {
+          const ev = event as ErrorEvent
+          setError(ev.message)
+          break
+        } else if (event.type === 'done') {
+          // Terminal — fall out of the loop.
+          break
+        }
+      }
+      // Photo (if any) has been consumed by the server; clear local state.
       setPhotoB64(null)
-      setStatus('idle')
-      setMessage(null)
     } catch (err) {
-      setError((err as Error).message)
+      if ((err as Error).name !== 'AbortError') {
+        setError((err as Error).message)
+      }
+    } finally {
       setStatus('idle')
+      if (streamAbortRef.current === ctrl) {
+        streamAbortRef.current = null
+      }
     }
   }
 
   const handleSubmitAttempt = async () => {
     if (!sessionId || !attempt.trim()) return
 
+    const ctrl = startNewAbort()
     setStatus('loading')
     setError(null)
+    // We don't pre-clear `hint` because the verdict may keep us in a
+    // non-streaming branch (correct / review). The verdict + first chunk
+    // arrive before any UI change matters.
+
+    let willStreamHint = false
 
     try {
-      const result = await api.submitAttempt(sessionId, { attempt_text: attempt })
-
-      if (result.status === 'correct') {
-        setMessage('You got it! Great work!')
-        setReviewMode(false)
-        setLearningResources([])
-        setFinalAnswer(null)
-        setSessionStage('complete')
-        setAttempt('')
-      } else {
-        setHint(result.hint ?? null)
-        setHintLevel(result.hint_level ?? hintLevel)
-        setMessage(result.message ?? null)
-        setReviewMode(result.review_mode ?? false)
-        setLearningResources(result.learning_resources ?? [])
-        setFinalAnswer(result.final_answer ?? null)
-        setAttempt('')
+      const stream = await api.submitAttemptStream(
+        sessionId,
+        { attempt_text: attempt },
+        ctrl.signal,
+      )
+      for await (const event of stream as AsyncIterable<AttemptEvent>) {
+        if (event.type === 'verdict') {
+          const ev = event as VerdictEvent
+          if (ev.status === 'correct') {
+            setMessage('You got it! Great work!')
+            setReviewMode(false)
+            setLearningResources([])
+            setFinalAnswer(null)
+            setSessionStage('complete')
+            setAttempt('')
+            continue
+          }
+          // Wrong path.
+          const newLevel = ev.hint_level ?? hintLevel
+          const levelChanged = newLevel !== hintLevel
+          setHintLevel(newLevel)
+          setMessage(ev.message ?? null)
+          setReviewMode(ev.review_mode ?? false)
+          setLearningResources(ev.learning_resources ?? [])
+          setFinalAnswer(ev.final_answer ?? null)
+          setAttempt('')
+          if (levelChanged) {
+            setClarifyHistory([])
+            setClarifyRemaining(CLARIFICATIONS_PER_LEVEL)
+            setClarifyMode(false)
+            setClarifyText('')
+            setClarifyError(null)
+          }
+          // Review-mode + final-answer paths carry a canned hint or no hint
+          // at all and never stream. Otherwise we reset and prepare to append.
+          if (ev.review_mode || ev.final_answer != null) {
+            setHint(ev.static_hint ?? null)
+          } else {
+            setHint('')
+            willStreamHint = true
+          }
+        } else if (event.type === 'chunk') {
+          if (!willStreamHint) continue
+          const ev = event as ChunkEvent
+          setHint((curr) => (curr ?? '') + ev.text)
+        } else if (event.type === 'error') {
+          const ev = event as ErrorEvent
+          setError(ev.message)
+          break
+        } else if (event.type === 'done') {
+          break
+        }
       }
-      setStatus('idle')
     } catch (err) {
-      setError((err as Error).message)
+      if ((err as Error).name !== 'AbortError') {
+        setError((err as Error).message)
+      }
+    } finally {
       setStatus('idle')
+      if (streamAbortRef.current === ctrl) {
+        streamAbortRef.current = null
+      }
     }
   }
+
 
   const handleNextProblem = () => {
     setSessionId(null)
@@ -113,6 +226,31 @@ export const StudentChat: React.FC = () => {
     setReviewMode(false)
     setFinalAnswer(null)
     setLearningResources([])
+    setClarifyHistory([])
+    setClarifyRemaining(CLARIFICATIONS_PER_LEVEL)
+    setClarifyMode(false)
+    setClarifyText('')
+    setClarifyError(null)
+  }
+
+  const handleSubmitClarification = async () => {
+    if (!sessionId || !clarifyText.trim() || clarifyLoading) return
+    setClarifyLoading(true)
+    setClarifyError(null)
+    const question = clarifyText.trim()
+    try {
+      const result = await api.clarify(sessionId, { message: question })
+      setClarifyHistory((curr) => [...curr, { question, response: result.clarification }])
+      setClarifyRemaining(result.remaining)
+      setClarifyText('')
+      if (result.remaining === 0) {
+        setClarifyMode(false)
+      }
+    } catch (err) {
+      setClarifyError((err as Error).message)
+    } finally {
+      setClarifyLoading(false)
+    }
   }
 
   const handleHistorySelect = (text: string) => {
@@ -314,6 +452,75 @@ export const StudentChat: React.FC = () => {
               </div>
 
               {hint && <HintBubble hint={hint} level={hintLevel} />}
+
+              {hint && !reviewMode && !finalAnswer && (
+                <div className="mt-3 mb-4 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+                  {clarifyHistory.length > 0 && (
+                    <div className="space-y-3 mb-3">
+                      {clarifyHistory.map((entry, idx) => (
+                        <div key={idx} className="text-sm">
+                          <p className="text-indigo-900">
+                            <span className="font-semibold">You asked:</span> {entry.question}
+                          </p>
+                          <p className="text-gray-800 mt-1 pl-3 border-l-2 border-indigo-300">
+                            {entry.response}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {clarifyMode ? (
+                    <div>
+                      <textarea
+                        value={clarifyText}
+                        onChange={(e) => setClarifyText(e.target.value)}
+                        placeholder="Ask a question about this hint…"
+                        className="w-full h-20 p-2 text-sm border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                        disabled={clarifyLoading}
+                      />
+                      <div className="flex items-center justify-end gap-2 mt-2">
+                        <button
+                          onClick={() => {
+                            setClarifyMode(false)
+                            setClarifyText('')
+                            setClarifyError(null)
+                          }}
+                          disabled={clarifyLoading}
+                          className="text-xs text-gray-600 hover:text-gray-900 px-2"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSubmitClarification}
+                          disabled={clarifyLoading || !clarifyText.trim()}
+                          className="text-xs px-3 py-1 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition"
+                        >
+                          {clarifyLoading ? 'Thinking…' : 'Ask'}
+                        </button>
+                      </div>
+                      {clarifyError && (
+                        <p className="text-xs text-red-700 mt-1">{clarifyError}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-gray-600">
+                        {clarifyRemaining > 0
+                          ? `${clarifyRemaining} question${clarifyRemaining === 1 ? '' : 's'} left at this hint`
+                          : "You've used your clarifications for this hint — try submitting an answer."}
+                      </p>
+                      <button
+                        onClick={() => setClarifyMode(true)}
+                        disabled={clarifyRemaining === 0}
+                        className="text-xs px-3 py-1 rounded-full bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                      >
+                        Ask a question
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {reviewMode && (
                 <div className="relative overflow-hidden rounded-lg p-6 bg-gradient-to-br from-orange-50 via-white to-amber-50 border border-orange-200 mb-4">
