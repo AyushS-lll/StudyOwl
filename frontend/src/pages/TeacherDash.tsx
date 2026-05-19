@@ -1,6 +1,12 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/studyowl'
-import type { TeacherAlert, TeacherMetricsResponse } from '../api/studyowl'
+import type {
+  TeacherAlert,
+  TeacherAlertsResponse,
+  TeacherMetricsResponse,
+} from '../api/studyowl'
+import { usePolling } from '../hooks/usePolling'
 
 const SEVERITY_BADGE: Record<TeacherAlert['severity'], { label: string; classes: string }> = {
   high: { label: '🔴 HIGH', classes: 'bg-red-100 text-red-800 border-red-300' },
@@ -26,66 +32,87 @@ interface StudentProgress {
   recent_sessions: Array<{ id: string; question: string; subject: string; resolved: boolean; started_at: string }>
 }
 
+const POLL_INTERVAL_MS = 20_000
+
+function formatTime(d: Date | null): string {
+  if (!d) return '—'
+  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
 export const TeacherDash: React.FC = () => {
-  const [alerts, setAlerts] = useState<TeacherAlert[]>([])
-  const [metrics, setMetrics] = useState<TeacherMetricsResponse | null>(null)
+  const navigate = useNavigate()
+  const { studentId: urlStudentId } = useParams<{ studentId?: string }>()
+
   const [students, setStudents] = useState<StudentSummary[]>([])
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
+  const [studentsLoading, setStudentsLoading] = useState(true)
+  const [studentsError, setStudentsError] = useState<string | null>(null)
   const [selectedStudentProgress, setSelectedStudentProgress] = useState<StudentProgress | null>(null)
-  const [loading, setLoading] = useState(true)
   const [loadingStudent, setLoadingStudent] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [studentDetailError, setStudentDetailError] = useState<string | null>(null)
   // In-flight ack/resolve to prevent double-clicks. Keyed by alert ID.
   const [actionInFlight, setActionInFlight] = useState<Record<string, boolean>>({})
+  // Errors from ack/resolve actions (separate from polling errors).
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const fetchAlerts = useCallback(
+    (signal: AbortSignal) => api.getAlerts({ signal }),
+    [],
+  )
+  const fetchMetrics = useCallback(
+    (signal: AbortSignal) => api.getTeacherMetrics({ signal }),
+    [],
+  )
+
+  const alertsPoll = usePolling<TeacherAlertsResponse>({ fetcher: fetchAlerts, intervalMs: POLL_INTERVAL_MS })
+  const metricsPoll = usePolling<TeacherMetricsResponse>({ fetcher: fetchMetrics, intervalMs: POLL_INTERVAL_MS })
+
+  const alerts = alertsPoll.data?.pending_alerts ?? []
+  const metrics = metricsPoll.data
+
+  // The most recent of the two polls — that's our "freshness" indicator.
+  const lastUpdated =
+    alertsPoll.lastUpdated && metricsPoll.lastUpdated
+      ? new Date(Math.max(alertsPoll.lastUpdated.getTime(), metricsPoll.lastUpdated.getTime()))
+      : alertsPoll.lastUpdated ?? metricsPoll.lastUpdated
+
+  // Aggregate polling error — surfaces the most recent one without hiding stale data.
+  const pollingError = alertsPoll.error ?? metricsPoll.error
+
+  // URL is the source of truth for which student is selected. Fall back to the
+  // first loaded student when the route is bare /teacher.
+  const selectedStudentId = urlStudentId ?? students[0]?.id ?? null
+
+  const handleSelectStudent = (id: string) => {
+    navigate(`/teacher/students/${id}`)
+  }
 
   useEffect(() => {
-    const loadDashboard = async () => {
+    const loadStudents = async () => {
       try {
-        const [alertResponse, metricsResponse, studentListResponse] = await Promise.all([
-          api.getAlerts(),
-          api.getTeacherMetrics(),
-          api.getStudentList(),
-        ])
-        setAlerts(alertResponse.pending_alerts)
-        setMetrics(metricsResponse)
+        const studentListResponse = await api.getStudentList()
         setStudents(studentListResponse.students)
-        if (studentListResponse.students.length > 0) {
-          setSelectedStudentId(studentListResponse.students[0].id)
-        }
       } catch (err) {
-        setError((err as Error).message)
+        setStudentsError((err as Error).message)
       } finally {
-        setLoading(false)
+        setStudentsLoading(false)
       }
     }
-
-    loadDashboard()
+    loadStudents()
   }, [])
 
+  // Alert state is owned by usePolling — we trigger a refresh after server-side
+  // mutation rather than optimistically rewriting local state. Snappy
+  // optimistic UX from the perf branch was dropped during the main merge
+  // because usePolling doesn't expose setData; revisit by extending the hook.
   const handleAcknowledge = async (alert: TeacherAlert) => {
     if (actionInFlight[alert.id]) return
     setActionInFlight((m) => ({ ...m, [alert.id]: true }))
-    // Optimistic: mark acknowledged locally before the round-trip.
-    setAlerts((curr) =>
-      curr.map((a) =>
-        a.id === alert.id
-          ? { ...a, acknowledged_at: new Date().toISOString(), acknowledged_by_name: 'you' }
-          : a,
-      ),
-    )
+    setActionError(null)
     try {
-      const fresh = await api.acknowledgeAlert(alert.id)
-      setAlerts((curr) => curr.map((a) => (a.id === fresh.id ? fresh : a)))
+      await api.acknowledgeAlert(alert.id)
+      alertsPoll.refresh()
     } catch (err) {
-      // Roll back optimistic state on error.
-      setAlerts((curr) =>
-        curr.map((a) =>
-          a.id === alert.id
-            ? { ...a, acknowledged_at: alert.acknowledged_at, acknowledged_by_name: alert.acknowledged_by_name }
-            : a,
-        ),
-      )
-      setError((err as Error).message)
+      setActionError((err as Error).message)
     } finally {
       setActionInFlight((m) => {
         const next = { ...m }
@@ -98,16 +125,13 @@ export const TeacherDash: React.FC = () => {
   const handleResolve = async (alert: TeacherAlert) => {
     if (actionInFlight[alert.id]) return
     setActionInFlight((m) => ({ ...m, [alert.id]: true }))
-    // Optimistic: remove from the unresolved list immediately.
-    setAlerts((curr) => curr.filter((a) => a.id !== alert.id))
+    setActionError(null)
     try {
       await api.resolveAlert(alert.id)
-      // Decrement the pending counter in metrics, optimistically.
-      setMetrics((m) => (m ? { ...m, pending_alerts: Math.max(0, m.pending_alerts - 1) } : m))
+      alertsPoll.refresh()
+      metricsPoll.refresh()
     } catch (err) {
-      // Roll back: re-add the alert.
-      setAlerts((curr) => [alert, ...curr])
-      setError((err as Error).message)
+      setActionError((err as Error).message)
     } finally {
       setActionInFlight((m) => {
         const next = { ...m }
@@ -119,16 +143,18 @@ export const TeacherDash: React.FC = () => {
 
   useEffect(() => {
     if (!selectedStudentId) {
+      setSelectedStudentProgress(null)
       return
     }
 
     const loadStudentProgress = async () => {
       setLoadingStudent(true)
+      setStudentDetailError(null)
       try {
         const progress = await api.getStudentProgress(selectedStudentId)
         setSelectedStudentProgress(progress)
       } catch (err) {
-        setError((err as Error).message)
+        setStudentDetailError((err as Error).message)
       } finally {
         setLoadingStudent(false)
       }
@@ -137,21 +163,34 @@ export const TeacherDash: React.FC = () => {
     loadStudentProgress()
   }, [selectedStudentId])
 
+  const error = studentsError ?? studentDetailError ?? actionError
+
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <div className="max-w-6xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            🦉 Teacher Dashboard
-          </h1>
-          <p className="text-gray-600">Monitor student progress and help when needed</p>
+        <header className="mb-8 flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              🦉 Teacher Dashboard
+            </h1>
+            <p className="text-gray-600">Monitor student progress and help when needed</p>
+          </div>
+          <div className="text-right text-xs text-slate-500" aria-live="polite">
+            <p>Auto-refreshing every {POLL_INTERVAL_MS / 1000}s</p>
+            <p>Last updated: {formatTime(lastUpdated)}</p>
+            {pollingError && (
+              <p className="text-amber-700 mt-1">
+                Live update failed — showing last known data
+              </p>
+            )}
+          </div>
         </header>
 
         <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">📚 Student Roster</h2>
-              {loading ? (
+              {studentsLoading ? (
                 <p className="text-gray-600">Loading students...</p>
               ) : students.length === 0 ? (
                 <div className="text-center py-8">
@@ -162,7 +201,7 @@ export const TeacherDash: React.FC = () => {
                   {students.map((student) => (
                     <button
                       key={student.id}
-                      onClick={() => setSelectedStudentId(student.id)}
+                      onClick={() => handleSelectStudent(student.id)}
                       className={`block w-full rounded-2xl border px-4 py-3 text-left transition ${selectedStudentId === student.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-slate-50'}`}
                     >
                       <p className="font-semibold text-gray-900">{student.name}</p>
@@ -175,7 +214,7 @@ export const TeacherDash: React.FC = () => {
 
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">⚠️ Alerts</h2>
-              {loading ? (
+              {alertsPoll.isLoading ? (
                 <p className="text-gray-600">Loading alerts...</p>
               ) : alerts.length === 0 ? (
                 <p className="text-gray-600">No active alerts right now.</p>

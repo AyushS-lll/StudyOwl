@@ -8,6 +8,7 @@ from . import answer_verifier
 from . import alert_service
 from . import subject_router
 from . import ocr_service
+from . import inactivity_scheduler
 
 __all__ = [
     "hint_engine",
@@ -16,4 +17,5 @@ __all__ = [
     "alert_service",
     "subject_router",
     "ocr_service",
+    "inactivity_scheduler",
 ]

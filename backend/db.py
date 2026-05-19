@@ -48,6 +48,17 @@ async def init_db() -> None:
                 "ADD COLUMN IF NOT EXISTS kind VARCHAR(16) NOT NULL DEFAULT 'answer'"
             ))
 
+            # last_activity_at column + index on sessions (from main).
+            await conn.execute(text(
+                "ALTER TABLE sessions "
+                "ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ "
+                "NOT NULL DEFAULT NOW()"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_sessions_last_activity_at "
+                "ON sessions (last_activity_at)"
+            ))
+
             # PR 7: backfill one Alert row per legacy `teacher_alerted=True` session,
             # so the dashboard doesn't lose visibility on existing open alerts.
             # The NOT EXISTS guard keeps this idempotent across restarts.

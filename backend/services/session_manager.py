@@ -42,6 +42,7 @@ async def start_session(
     """
     subject = await subject_router.classify(question)
 
+    now = datetime.now(timezone.utc)
     session = Session(
         student_id=student_id,
         question=question,
@@ -49,7 +50,8 @@ async def start_session(
         hint_level=1,
         fails_at_level=0,
         photo_url=photo_url,
-        started_at=datetime.now(timezone.utc),
+        started_at=now,
+        last_activity_at=now,
     )
     db.add(session)
     await db.commit()
@@ -83,6 +85,10 @@ async def process_attempt(
         Dict with keys: status ('correct'|'wrong'), hint (if wrong),
         hint_level (if wrong), message.
     """
+    # Bump activity timestamp — used by the inactivity scheduler to decide
+    # whether a session is stuck. Updated whether the attempt is right or wrong.
+    session.last_activity_at = datetime.now(timezone.utc)
+
     # Distress check (fires alert regardless of attempt correctness)
     if await hint_engine.detect_distress(attempt_text):
         await _trigger_alert(

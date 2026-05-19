@@ -26,6 +26,7 @@ export interface TokenResponse {
   token_type: string;
   user_id: string;
   role: "student" | "teacher";
+  name: string;
 }
 
 export interface StartSessionRequest {
@@ -265,25 +266,26 @@ async function streamingPost<T>(
 // ── API calls ────────────────────────────────────────────────────────────────
 
 export const api = {
-  /** Sign up a new account. */
-  signup: async (body: SignUpRequest): Promise<TokenResponse> => {
-    const result = await apiFetch<TokenResponse>("/api/auth/signup", {
+  /**
+   * Sign up a new account. The caller (AuthContext) is responsible for
+   * persisting the token; this function intentionally does not touch
+   * localStorage.
+   */
+  signup: (body: SignUpRequest): Promise<TokenResponse> =>
+    apiFetch<TokenResponse>("/api/auth/signup", {
       method: "POST",
       body: JSON.stringify(body),
-    });
-    localStorage.setItem("studyowl_token", result.access_token);
-    return result;
-  },
+    }),
 
-  /** Log in and store the JWT token. */
-  login: async (body: LoginRequest): Promise<TokenResponse> => {
-    const result = await apiFetch<TokenResponse>("/api/auth/login", {
+  /**
+   * Log in. The caller (AuthContext) is responsible for persisting the token;
+   * this function intentionally does not touch localStorage.
+   */
+  login: (body: LoginRequest): Promise<TokenResponse> =>
+    apiFetch<TokenResponse>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify(body),
-    });
-    localStorage.setItem("studyowl_token", result.access_token);
-    return result;
-  },
+    }),
 
   /** Fetch students list for teachers. */
   getStudentList: () =>
@@ -308,6 +310,17 @@ export const api = {
     streamingPost<StartSessionEvent>("/api/session/start", body, signal),
 
   /**
+   * Non-streaming `startSession` retained for callers that haven't migrated
+   * to the streaming API yet. Hits the same endpoint; backend negotiates by
+   * the Accept header.
+   */
+  startSession: (body: StartSessionRequest) =>
+    apiFetch<StartSessionResponse>("/api/session/start", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /**
    * Submit a student's answer attempt — returns an NDJSON stream of events.
    * See AttemptEvent for the event shapes.
    */
@@ -326,11 +339,12 @@ export const api = {
     apiFetch<StudentProgress>(`/api/student/${studentId}/progress`),
 
   /** Fetch teacher classroom analytics and alert metrics. */
-  getTeacherMetrics: () =>
-    apiFetch<TeacherMetricsResponse>("/api/alert/metrics"),
+  getTeacherMetrics: (opts?: { signal?: AbortSignal }) =>
+    apiFetch<TeacherMetricsResponse>("/api/alert/metrics", { signal: opts?.signal }),
 
   /** Fetch current unresolved alerts for teachers. */
-  getAlerts: () => apiFetch<TeacherAlertsResponse>("/api/alert"),
+  getAlerts: (opts?: { signal?: AbortSignal }) =>
+    apiFetch<TeacherAlertsResponse>("/api/alert", { signal: opts?.signal }),
 
   /** Mark an alert as acknowledged by the current teacher. Idempotent. */
   acknowledgeAlert: (alertId: string) =>
