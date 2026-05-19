@@ -30,7 +30,7 @@ def _extract_math_expression(question: str) -> str | None:
     text = text.replace("–", "-")
     text = text.replace("—", "-")
     text = text.replace("−", "-")
-    text = re.sub(r"what is |calculate |evaluate |find |solve |the result of |answer is |equals?", "", text)
+    text = re.sub(r"what is|Solve for|calculate |evaluate |find |solve |the result of |answer is |equals?", "", text)
     text = re.sub(r"[^0-9a-zA-Z\.\+\-\*/\^\(\)= ]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     
@@ -65,7 +65,7 @@ async def _verify_math(question: str, answer: str) -> bool:
     Verify math answers using SymPy when possible.
     Falls back to Claude for complex cases.
     """
-    # Clean up the answer: remove common prefixes (with or without space)
+    # Clean up the answer: remove prefixes (with or without space)
     answer_clean = answer.strip()
     for prefix in ["a =", "a=", "x =", "x=", "y =", "y=", "z =", "z=", "Answer:", "answer:", "The answer is"]:
         if answer_clean.lower().startswith(prefix.lower()):
@@ -120,7 +120,7 @@ async def _verify_math(question: str, answer: str) -> bool:
                     if abs(sol_val - actual_val) < 1e-9:
                         return True
                 except (TypeError, ValueError):
-                    # If conversion to float fails, try symbolic comparison
+                    # If conversion to float fails, ,try symbolic comparison
                     if sympy.simplify(actual - sol) == 0:
                         return True
             return False

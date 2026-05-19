@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 class Session(Base):
     __tablename__ = "sessions"
-
+#colums
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     student_id = Column(UUID(as_uuid=True), ForeignKey("students.id"), nullable=False)
     question = Column(Text, nullable=False)
@@ -26,7 +26,7 @@ class Session(Base):
     started_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     resolved_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Relationships
+    # Relationship
     student = relationship("Student", back_populates="sessions")
     attempts = relationship("Attempt", back_populates="session", cascade="all, delete-orphan")
 
