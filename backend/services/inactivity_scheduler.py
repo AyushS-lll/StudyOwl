@@ -16,6 +16,7 @@ from sqlalchemy.orm import joinedload
 
 from config import settings
 from db import SessionLocal, engine
+from models.alert import Alert, REASON_INACTIVITY, SEVERITY_FOR_REASON
 from models.session import Session
 from . import alert_service
 
@@ -74,15 +75,37 @@ async def _tick() -> int:
 
         alerted = 0
         for session in stuck_sessions:
-            session.teacher_alerted = True
-            reason = (
-                f"Student inactive for {timeout_minutes}+ minutes"
+            reason = f"Student inactive for {timeout_minutes}+ minutes"
+
+            # Same-kind dedup: skip if an unresolved inactivity alert already
+            # exists for this session. Mirrors session_manager._trigger_alert.
+            existing = await db.execute(
+                select(Alert).where(
+                    Alert.session_id == session.id,
+                    Alert.reason_kind == REASON_INACTIVITY,
+                    Alert.resolved_at.is_(None),
+                )
             )
+            if existing.scalars().first() is not None:
+                continue
+
+            alert = Alert(
+                session_id=session.id,
+                student_id=session.student_id,
+                severity=SEVERITY_FOR_REASON[REASON_INACTIVITY],
+                reason_kind=REASON_INACTIVITY,
+                reason_text=reason,
+            )
+            db.add(alert)
+            # Legacy boolean — kept in sync for one PR cycle so old queries
+            # that read `teacher_alerted` still see "this session was alerted."
+            session.teacher_alerted = True
             try:
-                await alert_service.notify_teacher(session, reason=reason)
+                # notify_teacher commits internally and records sent/failed on
+                # the alert row.
+                await alert_service.notify_teacher(db, alert, session)
             except Exception as exc:
-                # Don't let one notification failure block the rest of the tick;
-                # the flag is already flipped so we won't retry-spam.
+                # Don't let one notification failure block the rest of the tick.
                 logger.exception(
                     "Inactivity alert notify failed for session %s: %s",
                     session.id, exc,

@@ -97,7 +97,12 @@ async def _verify_math(question: str, answer: str) -> bool:
             
             left_expr = parts[0].strip()
             right_expr = parts[1].strip()
-            
+            # SymPy's parse_expr raises a SyntaxError (wrapping ValueError) on
+            # empty input — happens when the extractor leaves us with "=50" or
+            # "x=". Fall back to Claude rather than crashing the stream.
+            if not left_expr or not right_expr:
+                return await _verify_with_claude(question, answer, "math")
+
             # Parse both sides with implicit multiplication
             left = parse_expr(left_expr, transformations=(standard_transformations + (implicit_multiplication_application,)))
             right = parse_expr(right_expr, transformations=(standard_transformations + (implicit_multiplication_application,)))
@@ -138,7 +143,7 @@ async def _verify_math(question: str, answer: str) -> bool:
             expected = parse_expr(question_expr, transformations=(standard_transformations + (implicit_multiplication_application,)))
             actual = sympy.sympify(answer_clean)
             return sympy.simplify(expected - actual) == 0
-    except (sympy.SympifyError, ValueError, TypeError):
+    except (sympy.SympifyError, ValueError, TypeError, SyntaxError):
         return await _verify_with_claude(question, answer, "math")
 
 
@@ -175,7 +180,7 @@ def solve_math_question(question: str) -> str | None:
         expected = parse_expr(question_expr, transformations=(standard_transformations + (implicit_multiplication_application,)))
         simplified = sympy.simplify(expected)
         return str(simplified)
-    except (sympy.SympifyError, ValueError, TypeError):
+    except (sympy.SympifyError, ValueError, TypeError, SyntaxError):
         return None
 
 
