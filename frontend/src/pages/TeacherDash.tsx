@@ -223,52 +223,84 @@ export const TeacherDash: React.FC = () => {
                   {alerts.map((alert) => {
                     const badge = SEVERITY_BADGE[alert.severity]
                     const busy = !!actionInFlight[alert.id]
+                    const stripeClass =
+                      alert.severity === 'high' ? 'bg-red-500'
+                      : alert.severity === 'medium' ? 'bg-amber-500'
+                      : 'bg-sky-500'
                     return (
                       <div
                         key={alert.id}
-                        className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4 space-y-2"
+                        className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-shadow"
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-semibold text-gray-900 break-words">{alert.student_name}</p>
-                          <span
-                            className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${badge.classes} whitespace-nowrap`}
-                            title={`${REASON_LABEL[alert.reason_kind]}: ${alert.reason_text}`}
+                        <div aria-hidden="true" className={`absolute left-0 top-0 bottom-0 w-1 ${stripeClass}`} />
+                        <div className="p-4 sm:p-5 pl-5 sm:pl-6 space-y-3">
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <p className="font-semibold text-slate-900 break-words min-w-0 flex-1">
+                              {alert.student_name}
+                            </p>
+                            <span
+                              className={`text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border ${badge.classes} whitespace-nowrap`}
+                              title={`${REASON_LABEL[alert.reason_kind]}: ${alert.reason_text}`}
+                            >
+                              {badge.label}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                              {REASON_LABEL[alert.reason_kind]}
+                            </span>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                              Hint {alert.hint_level}/3
+                            </span>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                              {alert.fails_at_level} {alert.fails_at_level === 1 ? 'fail' : 'fails'}
+                            </span>
+                            {alert.notification_status === 'failed' && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                                <span aria-hidden="true">⚠</span> Delivery failed
+                              </span>
+                            )}
+                          </div>
+
+                          <blockquote
+                            className="border-l-2 border-slate-200 pl-3 text-sm italic text-slate-600 line-clamp-2 break-words"
+                            title={alert.question}
                           >
-                            {badge.label}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          {REASON_LABEL[alert.reason_kind]} · Hint {alert.hint_level}/3 · {alert.fails_at_level} fails
-                        </p>
-                        <p className="text-sm text-gray-700 break-words">
-                          Q: {alert.question.substring(0, 120)}{alert.question.length > 120 ? '…' : ''}
-                        </p>
-                        {alert.notification_status === 'failed' && (
-                          <p className="text-xs text-red-700">⚠️ Delivery failed</p>
-                        )}
-                        <div className="flex items-center justify-between gap-2 pt-1">
-                          <span className="text-xs text-gray-500">
-                            {alert.acknowledged_at
-                              ? `Ack'd by ${alert.acknowledged_by_name ?? 'someone'}`
-                              : 'Not yet acknowledged'}
-                          </span>
-                          <div className="flex gap-2">
-                            {!alert.acknowledged_at && (
+                            {alert.question}
+                          </blockquote>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                            <span className="text-xs text-slate-500">
+                              {alert.acknowledged_at ? (
+                                <>
+                                  Acknowledged by{' '}
+                                  <span className="font-medium text-slate-700">
+                                    {alert.acknowledged_by_name ?? 'a teacher'}
+                                  </span>
+                                </>
+                              ) : (
+                                'Not yet acknowledged'
+                              )}
+                            </span>
+                            <div className="flex gap-2">
+                              {!alert.acknowledged_at && (
+                                <button
+                                  disabled={busy}
+                                  onClick={() => handleAcknowledge(alert)}
+                                  className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 transition"
+                                >
+                                  {busy ? '…' : 'Acknowledge'}
+                                </button>
+                              )}
                               <button
                                 disabled={busy}
-                                onClick={() => handleAcknowledge(alert)}
-                                className="text-xs px-3 py-1 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition"
+                                onClick={() => handleResolve(alert)}
+                                className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition"
                               >
-                                {busy ? '…' : 'Acknowledge'}
+                                {busy ? '…' : 'Resolve'}
                               </button>
-                            )}
-                            <button
-                              disabled={busy}
-                              onClick={() => handleResolve(alert)}
-                              className="text-xs px-3 py-1 rounded-full bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition"
-                            >
-                              {busy ? '…' : 'Resolve'}
-                            </button>
+                            </div>
                           </div>
                         </div>
                       </div>
