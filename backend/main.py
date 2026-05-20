@@ -3,6 +3,8 @@ StudyOwl — FastAPI application entry point.
 Registers all routers and configures CORS, lifespan, and middleware.
 """
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,13 +12,32 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from db import init_db
 from routers import sessions, alerts, progress, auth
+from services import inactivity_scheduler
+
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialise DB connection pool on startup, close on shutdown."""
     await init_db()
-    yield
+
+    scheduler_task: asyncio.Task | None = None
+    if settings.inactivity_scheduler_enabled:
+        scheduler_task = asyncio.create_task(inactivity_scheduler.run())
+    else:
+        logger.info("Inactivity scheduler disabled via config.")
+
+    try:
+        yield
+    finally:
+        if scheduler_task is not None:
+            scheduler_task.cancel()
+            try:
+                await scheduler_task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(

@@ -38,6 +38,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_id: str
     role: str
+    name: str
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -134,6 +135,7 @@ async def signup(req: SignUpRequest, db: AsyncSession = Depends(get_db)):
         "access_token": access_token,
         "user_id": str(student.id),
         "role": student.role,
+        "name": student.name,
     }
 
 
@@ -158,4 +160,5 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         "access_token": access_token,
         "user_id": str(student.id),
         "role": student.role,
+        "name": student.name,
     }

@@ -2,9 +2,9 @@
 Progress router — retrieve student progress and analytics.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from pydantic import BaseModel
 from uuid import UUID
 
@@ -35,6 +35,22 @@ class RecentSession(BaseModel):
 class StudentProgressResponse(BaseModel):
     subjects: list[SubjectProgress]
     recent_sessions: list[RecentSession]
+
+
+class HistorySession(BaseModel):
+    id: str
+    question: str
+    subject: str
+    resolved: bool
+    started_at: str
+    resolved_at: str | None = None
+
+
+class StudentSessionHistoryResponse(BaseModel):
+    sessions: list[HistorySession]
+    total: int
+    limit: int
+    offset: int
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -96,6 +112,65 @@ async def get_student_progress(
     return StudentProgressResponse(
         subjects=subjects_data,
         recent_sessions=recent_sessions_data,
+    )
+
+
+@router.get("/{student_id}/sessions", response_model=StudentSessionHistoryResponse)
+async def get_student_sessions(
+    student_id: str,
+    limit: int = Query(10, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    current_student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Paginated full-text session history for a student, newest first.
+
+    Returns untruncated question text so the frontend can pre-fill the chat
+    form. Students may only view their own history; teachers may view any.
+    """
+    try:
+        student_uuid = UUID(student_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid student ID")
+
+    if current_student.role == "student":
+        if str(current_student.id) != student_id:
+            raise HTTPException(status_code=403, detail="Students can only view their own sessions")
+    elif current_student.role != "teacher":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    total_stmt = (
+        select(func.count())
+        .select_from(Session)
+        .where(Session.student_id == student_uuid)
+    )
+    total = (await db.execute(total_stmt)).scalar_one()
+
+    stmt = (
+        select(Session)
+        .where(Session.student_id == student_uuid)
+        .order_by(Session.started_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    sessions = (await db.execute(stmt)).scalars().all()
+
+    return StudentSessionHistoryResponse(
+        sessions=[
+            HistorySession(
+                id=str(s.id),
+                question=s.question,
+                subject=s.subject,
+                resolved=s.resolved,
+                started_at=s.started_at.isoformat(),
+                resolved_at=s.resolved_at.isoformat() if s.resolved_at else None,
+            )
+            for s in sessions
+        ],
+        total=int(total),
+        limit=limit,
+        offset=offset,
     )
 
 
